@@ -272,16 +272,17 @@ def train(config):
         optimizer.zero_grad()
         
         for i in range(k):
-            total_loss = 0
-            xs_mb = xs_mb_all[inds_xs[i]].cuda()
-            ys_mb = ys_mb_all[inds_xs[i]].cuda()
-            g_xs_mb, f_g_xs_mb = base_network(xs_mb)
-            # Classifier loss
-            classifier_loss = 1./(k) * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
-            total_loss += classifier_loss
             for j in range(k):
+                total_loss = 0
+                xs_mb = xs_mb_all[inds_xs[i]].cuda()
+                ys_mb = ys_mb_all[inds_xs[i]].cuda()
+                g_xs_mb, f_g_xs_mb = base_network(xs_mb)
+                # Classifier loss
+                classifier_loss = 1./(k**2) * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
+                total_loss += classifier_loss
                 if use_bomb:
                     if plan[i, j] == 0:
+                        total_loss.backward()
                         continue
                 xt_mb = xt_mb_all[inds_xt[0]].cuda()
                 g_xt_mb, f_g_xt_mb = base_network(xt_mb)
@@ -311,9 +312,8 @@ def train(config):
                 else:
                     transfer_loss = 1./(k**2) * transfer_loss
                 total_loss += transfer_loss
+                total_loss.backward()
                 
-            total_loss.backward()
-        
         optimizer.step()
     checkpoint = {"base_network": temp_model.state_dict()}
     torch.save(checkpoint, osp.join(config["output_path"], "final_model.pth"))

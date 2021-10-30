@@ -135,17 +135,18 @@ class DigitsDA(DA):
                 optimizer_f.zero_grad()
                 
                 for i in range(k):
-                    total_loss = 0
-                    xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                    g_xs_mb = self.model_g(xs_mb)
-                    f_g_xs_mb = self.model_f(g_xs_mb)
-                    ys = ys_all[inds_xs[i]].cuda()
-                    # Classifier loss
-                    s_loss = 1./(k) * criterion(f_g_xs_mb, ys)
-                    total_loss += s_loss
                     for j in range(k):
+                        total_loss = 0
+                        xs_mb = xs_mb_all[inds_xs[i]].cuda()
+                        g_xs_mb = self.model_g(xs_mb)
+                        f_g_xs_mb = self.model_f(g_xs_mb)
+                        ys = ys_all[inds_xs[i]].cuda()
+                        # Classifier loss
+                        s_loss = 1./(k**2) * criterion(f_g_xs_mb, ys)
+                        total_loss += s_loss
                         if use_bomb:
                             if plan[i,j] == 0:
+                                total_loss.backward()
                                 continue
                         xt_mb = xt_mb_all[inds_xt[j]].cuda()
                         g_xt_mb = self.model_g(xt_mb)
@@ -182,8 +183,8 @@ class DigitsDA(DA):
                         else:
                             mloss = 1./(k**2) * da_loss
                         total_loss += mloss
+                        total_loss.backward()
                     
-                    total_loss.backward()
                 optimizer_g.step()
                 optimizer_f.step()
 

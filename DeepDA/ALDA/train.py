@@ -239,7 +239,7 @@ def train(config):
                     ys_mb = ys_mb_all[inds_xs[i]].cuda()
                     g_xs_mb, f_g_xs_mb = base_network(xs_mb)
                     for j in range(k):
-                        xt_mb = xt_mb_all[inds_xt[0]].cuda()
+                        xt_mb = xt_mb_all[inds_xt[j]].cuda()
                         g_xt_mb, f_g_xt_mb = base_network(xt_mb)
                         pred_xt = F.softmax(f_g_xt_mb, 1)
                         ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
@@ -284,7 +284,7 @@ def train(config):
                     if plan[i, j] == 0:
                         total_loss.backward()
                         continue
-                xt_mb = xt_mb_all[inds_xt[0]].cuda()
+                xt_mb = xt_mb_all[inds_xt[j]].cuda()
                 g_xt_mb, f_g_xt_mb = base_network(xt_mb)
                 pred_xt = F.softmax(f_g_xt_mb, 1)
                 ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()

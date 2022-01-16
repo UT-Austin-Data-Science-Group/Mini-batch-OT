@@ -368,6 +368,7 @@ if __name__ == "__main__":
 
     # train config
     config = {}
+    args.batch_size = args.batch_size * args.k
     config['args'] = args
     config["gpu"] = args.gpu_id
     config["num_iterations"] = args.stop_step + 1
@@ -392,10 +393,6 @@ if __name__ == "__main__":
         os.mkdir("snapshot/")
     os.mkdir(config["output_path"])
     config["out_file"] = open(osp.join(config["output_path"], "log.txt"), "w")
-
-#     if len(config['gpu'].split(','))>1:
-#         args.batch_size = 32*len(config['gpu'].split(','))
-#         print("gpus:{}, batch size:{}".format(config['gpu'], args.batch_size))
 
     config["prep"] = {"test_10crop":args.test_10crop, 'params':{"resize_size":256, "crop_size":224}}
     

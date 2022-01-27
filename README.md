@@ -48,7 +48,7 @@ cfg.py : this file contains arguments for training.
 
 methods.py : this file implements the training process of the deep DA.
 
-models.py : this file contains the architecture of the genertor and the classifier. 
+models.py : this file contains the architecture of the generator and the classifier. 
 
 train_digits.py: running file for deep DA.
 
@@ -57,9 +57,9 @@ utils.py : this file contains implementation of utility functions.
 ### Terminologies
 --method : type of mini-batch deep DA method (jdot, jumbot, jpmbot)
 
---source_ds : source dataset 
+--source_ds : the source dataset 
 
---target_ds : target dataset
+--target_ds : the target dataset
 
 --epsilon : OT regularization coefficient for Sinkhorn algorithm
 
@@ -81,7 +81,7 @@ utils.py : this file contains implementation of utility functions.
 
 --lr : initial learning rate
 
---data_dir : path to dataset
+--data_dir : path to the dataset
 
 --reg : OT regularization coefficient for Sinkhorn algorithm
 
@@ -106,13 +106,13 @@ bash sh/exp_BoMbOT_change_m.sh
 ## Deep Adaptation on Office-Home and VisDA datasets (DeepDA/office)
 
 ### Code organization
-data_list.py : this file contains functions to create dataset.
+data_list.py : this file contains functions to create the dataset.
 
-evaluate.py : this file is used to evaluate model trained on VisDA dataset.
+evaluate.py : this file is used to evaluate model trained on the VisDA dataset.
 
 lr_schedule.py : this file implements the learning rate scheduler.
 
-network.py : this file contains the architecture of the genertor and the classifier. 
+network.py : this file contains the architecture of the generator and the classifier. 
 
 pre_process.py : this file implements preprocessing techniques. 
 
@@ -125,13 +125,13 @@ train.py : this file implements the training process for both datasets.
 
 --test_interval : interval of two continuous test phase
 
---s_dset_path : path to source dataset
+--s_dset_path : path to the source dataset
 
 --stratify_source : use stratify sampling
 
---s_dset_path : path to target dataset
+--s_dset_path : path to the target dataset
 
---batch_size : training batch size
+--batch_size : mini-batch size
 
 --stop_step : number of iterations
 
@@ -193,13 +193,13 @@ utils.py : this file contains implementation of utility functions.
 
 --m : mini-batch size
 
---epochs : number of epochs at k = 1. The actual running epochs is calculated by multiplying this value by the value of k.
+--epochs : number of epochs at k = 1. The actual running epochs are calculated by multiplying this value by the value of k.
 
 --lr : initial learning rate
 
---latent-size : latent size of the generator
+--latent-size : the latent size of the generator
 
---datadir : path to dataset
+--datadir : path to the dataset
 
 --L : number of projections when using slicing approach
 
@@ -239,9 +239,9 @@ python main.py  --m=100 --T=10000 --source images/s1.bmp --target images/t1.bmp 
 
 --T : the number of steps
 
---cluster: K mean clustering to compress images
+--cluster: K-means clustering to compress images
 
---palette: show color palette
+--palette: show the color palette
 
 --source: Path to the source image
 

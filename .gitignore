@@ -130,9 +130,12 @@ dmypy.json
 .pyre/
 
 # Data
+.idea
 DeepDA/digits/data/
-DeepDA/digits/snapshot/
-DeepDA/ALDA/snapshot/
+DeepDA/digits/*snapshot/
+DeepDA/office/*snapshot/
+DeepDA/office/data/office-home/images/
+home_*.txt
 *.pdf
 *.csv
 *.xlsx

@@ -4,18 +4,18 @@ echo -n "input the gpu (seperate by comma (,) ): "
 read gpus
 export CUDA_VISIBLE_DEVICES=${gpus}
 echo "using gpus ${gpus}"
-METHOD=jdot
+METHOD=jumbot
 SOURCE=usps
 TARGET=mnist
 DATA_DIR=./data
 M=25
 TEST_INTERVAL=1
 CLASS=10
-EPSILON=0.0 #0, 0.1
+EPSILON=0.1
 TAU=1.
 MASS=0.9
-ETA1=0.001
-ETA2=0.0001
+ETA1=0.1
+ETA2=0.1
 for K in 8
     do
     EPOCH=$(echo "scale=0; $K * 10" | bc -l)

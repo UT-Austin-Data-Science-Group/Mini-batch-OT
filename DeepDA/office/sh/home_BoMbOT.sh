@@ -1,7 +1,4 @@
 #!/bin/bash
-# python PATH
-# export PYTHONPATH="${PYTHONPATH}:${HOME}/github"
-
 gpus=1
 export CUDA_VISIBLE_DEVICES=${gpus}
 echo "using gpus ${gpus}"

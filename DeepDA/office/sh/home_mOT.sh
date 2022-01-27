@@ -1,11 +1,8 @@
 #!/bin/bash
-# python PATH
-# export PYTHONPATH="${PYTHONPATH}:${HOME}/github"
-
 gpus=1
 export CUDA_VISIBLE_DEVICES=${gpus}
 echo "using gpus ${gpus}"
-ot_type=partial
+ot_type=balanced
 use_bomb=no
 threshold=0.9
 run_id=0
@@ -22,7 +19,7 @@ TAU=0.5
 ITER=10000
 TEST_INTERVAL=500
 M=65
-K=1
+K=2
 BATCH=$(echo "$K * $M" | bc -l)
 
 if [ $ot_type = 'partial' ]

@@ -128,7 +128,10 @@ class DigitsDA(DA):
                                 list_da_loss.append(da_loss)
                         # Solving kxk OT
                         big_C = torch.stack(list_da_loss).view(k, k)
-                        plan = ot.emd([], [], big_C.detach().cpu().numpy())
+                        if self.batch_epsilon == 0:
+                            plan = ot.emd([], [], big_C.detach().cpu().numpy())
+                        else:
+                            plan = ot.sinkhorn([], [], big_C.detach().cpu().numpy(), reg=self.batch_epsilon)
 
                 # Reforward
                 optimizer_g.zero_grad()

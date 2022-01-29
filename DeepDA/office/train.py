@@ -187,6 +187,7 @@ def train(config):
     eta1 = config['eta1']
     eta2 = config['eta2']
     epsilon = config['epsilon']
+    be = config['be']
     tau = config['tau']
     mass = config['mass']
     len_train_source = len(dset_loaders["source"])
@@ -265,7 +266,10 @@ def train(config):
                         list_transfer_loss.append(transfer_loss)
                 # Solving kxk OT
                 big_C = torch.stack(list_transfer_loss).view(k, k)
-                plan = ot.emd([], [], big_C.detach().cpu().numpy())
+                if be == 0:
+                    plan = ot.emd([], [], big_C.detach().cpu().numpy())
+                else:
+                    plan = ot.sinkhorn([], [], big_C.detach().cpu().numpy(), reg=be)
         
         # Reforward
         optimizer = lr_scheduler(optimizer, i, **schedule_param)
@@ -353,7 +357,8 @@ if __name__ == "__main__":
     parser.add_argument('--epsilon', type=float, default=0., help="OT regularization coefficient")
     parser.add_argument('--tau', type=float, default=1., help="marginal penalization coeffidient")
     parser.add_argument('--mass', type=float, default=0.5, help="ratio of masses to be transported")
-    parser.add_argument('--use_bomb', type=str2bool, help='whether to use BoMb version')
+    parser.add_argument('--use_bomb', action='store_true', help='whether to use BomB version')
+    parser.add_argument('--be', type=float, default=0., help="OT regularization coefficient between mini-batches")
     parser.add_argument('--k', type=int, default=1, help='number of minibatches')
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
@@ -381,6 +386,7 @@ if __name__ == "__main__":
     config["tau"] = args.tau
     config["mass"] = args.mass
     config["use_bomb"] = args.use_bomb
+    config["be"] = args.be
     config["k"] = args.k
     config["output_for_test"] = True
     config["output_path"] = "snapshot/" + args.output_dir

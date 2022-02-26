@@ -40,12 +40,6 @@ def parse_args():
         default='./data', 
         help="Data directory")
     parser.add_argument(
-        '--generator',
-        type=str,
-        default='Cnn',
-        choices=['Cnn', 'Resnet50'],
-        help='generator name')
-    parser.add_argument(
         '--k',
         type=int,
         default=1,
@@ -61,11 +55,6 @@ def parse_args():
         default=100,
         help='number of epoch at k=1')
     parser.add_argument(
-        '--n_iterations',
-        type=int,
-        default=10000,
-        help='number of iterations for Office-Home and VisDA')
-    parser.add_argument(
         '--test_interval',
         type=int,
         default=1,
@@ -75,11 +64,6 @@ def parse_args():
         type=int,
         default=10,
         help='number of classes')
-    parser.add_argument(
-        '--bottleneck_dim',
-        type=int,
-        default=512,
-        help='number of output features of Resnet50 generator')
     parser.add_argument(
         '--epsilon',
         type=float,
@@ -120,36 +104,6 @@ def parse_args():
         type=float,
         default=0.1,
         help='weight of transportation loss')
-    parser.add_argument(
-        '--momentum',
-        type=float,
-        default=0.9,
-        help='momentum for SGD optimizer')
-    parser.add_argument(
-        '--weight_decay',
-        type=float,
-        default=0.0005,
-        help='weight decay for SGD optimizer')
-    parser.add_argument(
-        '--lr_mult',
-        type=float,
-        default=10,
-        help='ratio of classifier lr to generator lr')
-    parser.add_argument(
-        '--decay_mult',
-        type=float,
-        default=2,
-        help='ratio of classifier weight decay to generator weight decay')
-    parser.add_argument(
-        '--gamma',
-        type=float,
-        default=10,
-        help='param for inverse learning rate scheduler')
-    parser.add_argument(
-        '--power',
-        type=float,
-        default=0.75,
-        help='param for inverse learning rate scheduler')
     
     args = parser.parse_args()
     

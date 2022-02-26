@@ -63,24 +63,15 @@ def get_dataloader(source, target, data_dir, batch_size, num_workers=0):
     
     source_train_sampler = BalancedBatchSampler(source_labels, batch_size=batch_size)
     source_train_dl = DataLoader(source_train_ds, batch_sampler=source_train_sampler, num_workers=num_workers)
-    target_train_dl = DataLoader(target_train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    target_train_dl = DataLoader(target_train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     source_test_dl = DataLoader(source_test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     target_test_dl = DataLoader(target_test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
     return source_train_dl, target_train_dl, source_test_dl, target_test_dl
     
 def main():
-    # Set up parameters
     args = cfg.parse_args()
-    batch_size = args.k*args.mbsize
-    n_epoch = args.n_epochs
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
-    gpus = args.gpu_id.split(',')
-    
-    # Set random seed
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    
+
     # Logging config
     if args.use_bomb:
         prefix = 'b'
@@ -102,6 +93,16 @@ def main():
     logger = logging.getLogger()
     logger.info(args)
 
+    # Set up parameters
+    batch_size = args.k * args.mbsize
+    n_epoch = args.n_epochs
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+    gpus = args.gpu_id.split(',')
+    
+    # Set random seed
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    
     # Get dataloaders
     source_train_dl, target_train_dl, source_test_dl, target_test_dl = get_dataloader(args.source_ds, args.target_ds, args.data_dir, batch_size, args.num_workers)
 
@@ -124,9 +125,14 @@ def main():
                         mass=args.mass, tau=args.tau, 
                         test_interval=args.test_interval)
     model_da.source_only(source_train_dl, lr=args.lr) # train on source domain only
-    model_da.fit(source_train_dl, target_train_dl, target_test_dl, 
-                 n_epochs=n_epoch, lr=args.lr, k=args.k, 
-                 method=args.method, use_bomb=args.use_bomb)
+    if args.use_bomb:
+        model_da.fit_bomb(source_train_dl, target_train_dl, target_test_dl, 
+                n_epochs=n_epoch, lr=args.lr, k=args.k, 
+                batch_size=batch_size, method=args.method)
+    else:
+        model_da.fit(source_train_dl, target_train_dl, target_test_dl, 
+                n_epochs=n_epoch, lr=args.lr, k=args.k, 
+                batch_size=batch_size, method=args.method)
     
     # Evaluate
     source_acc = model_da.evaluate(source_test_dl)

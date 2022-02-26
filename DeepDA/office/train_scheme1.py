@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 import torch.nn.functional as F
 from tensorboardX import SummaryWriter
 import network
@@ -17,14 +18,12 @@ import random
 import ot
 
 def image_classification_test(loader, model, test_10crop=True):
-    all_output = []
-    all_label = []
+    start_test = True
     dataset = loader['test']
-
     with torch.no_grad():
         if test_10crop:
             iter_test = [iter(dataset[i]) for i in range(10)]
-            for _ in tqdm(range(len(dataset[0]))):
+            for i in tqdm(range(len(dataset[0]))):
                 data = [iter_test[j].next() for j in range(10)]
                 inputs = [data[j][0] for j in range(10)]
                 labels = data[0][1]
@@ -33,26 +32,33 @@ def image_classification_test(loader, model, test_10crop=True):
                 labels = labels
                 outputs = []
                 for j in range(10):
-                    _, predict_out = model(inputs[j])
+                    feature, predict_out = model(inputs[j])
                     predict_out = nn.Softmax(dim=1)(predict_out)
                     outputs.append(predict_out)
                 outputs = sum(outputs) / 10
-                all_output.append(outputs.float().cpu())
-                all_label.append(labels.float())
+                if start_test:
+                    all_output = outputs.float().cpu()
+                    all_label = labels.float()
+                    start_test = False
+                else:
+                    all_output = torch.cat((all_output, outputs.float().cpu()), 0)
+                    all_label = torch.cat((all_label, labels.float()), 0)
         else:
             iter_test = iter(dataset)
-            for _ in tqdm(range(len(dataset))):
+            for i in tqdm(range(len(dataset))):
                 data = iter_test.next()
                 inputs = data[0]
                 labels = data[1]
                 inputs = inputs.cuda()
-                _, outputs = model(inputs)
+                feature, outputs = model(inputs)
                 outputs = nn.Softmax(dim=1)(outputs)
-                all_output.append(outputs.float().cpu())
-                all_label.append(labels.float())
-    
-    all_output = torch.cat(all_output, 0)
-    all_label = torch.cat(all_label, 0)
+                if start_test:
+                    all_output = outputs.float().cpu()
+                    all_label = labels.float()
+                    start_test = False
+                else:
+                    all_output = torch.cat((all_output, outputs.float().cpu()), 0)
+                    all_label = torch.cat((all_label, labels.float()), 0)
     _, predict = torch.max(all_output, 1)
     accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
     return accuracy
@@ -170,7 +176,8 @@ def train(config):
     gpus = config['gpu'].split(',')
     if len(gpus) > 1:
         base_network = nn.DataParallel(base_network, device_ids=[int(i) for i in range(len(gpus))])
-
+        
+    begin_label = False
     writer = SummaryWriter(config["output_path"])
 
     ## train   
@@ -214,7 +221,6 @@ def train(config):
             break
                  
         ## train one iter
-        base_network.train()
         if i % len_train_source == 0:
             iter_source = iter(dset_loaders["source"])
         if i % len_train_target == 0:
@@ -225,15 +231,16 @@ def train(config):
         inds_xt = np.split(np.arange(xt_mb_all.size(0)), k)
         list_transfer_loss = []
         
+        # Forward
         if use_bomb:
-            # Forward
+            base_network.eval()
             with torch.no_grad():
                 for i in range(k):
                     xs_mb = xs_mb_all[inds_xs[i]].cuda()
                     ys_mb = ys_mb_all[inds_xs[i]].cuda()
                     g_xs_mb, f_g_xs_mb = base_network(xs_mb)
                     for j in range(k):
-                        xt_mb = xt_mb_all[inds_xt[j]].cuda()
+                        xt_mb = xt_mb_all[inds_xt[0]].cuda()
                         g_xt_mb, f_g_xt_mb = base_network(xt_mb)
                         pred_xt = F.softmax(f_g_xt_mb, 1)
                         ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
@@ -264,63 +271,23 @@ def train(config):
                 else:
                     plan = ot.sinkhorn([], [], big_C.detach().cpu().numpy(), reg=be)
         
-            # Reforward
-            optimizer = lr_scheduler(optimizer, i, **schedule_param)
-            optimizer.zero_grad()
-            
-            for i in range(k):
-                for j in range(k):
-                    total_loss = 0
-                    xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                    ys_mb = ys_mb_all[inds_xs[i]].cuda()
-                    g_xs_mb, f_g_xs_mb = base_network(xs_mb)
-                    # Classifier loss
-                    classifier_loss = 1./(k**2) * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
-                    total_loss += classifier_loss
-                    if plan[i, j] == 0:
-                        total_loss.backward()
-                        continue
-                    xt_mb = xt_mb_all[inds_xt[j]].cuda()
-                    g_xt_mb, f_g_xt_mb = base_network(xt_mb)
-                    pred_xt = F.softmax(f_g_xt_mb, 1)
-                    ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
-                    M_embed = torch.cdist(g_xs_mb, g_xt_mb)**2
-                    M_sce = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
-                    M = eta1 * M_embed + eta2 * M_sce
-                    a, b = ot.unif(g_xs_mb.size(0)), ot.unif(g_xt_mb.size(0))
-                    M_cpu = M.detach().cpu().numpy()
-                    if ot_type == 'balanced':
-                        if epsilon == 0:
-                            pi = ot.emd(a, b, M_cpu)
-                        else:
-                            pi = ot.sinkhorn(a, b, M_cpu, epsilon)
-                    elif ot_type == 'unbalanced':
-                        pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, M_cpu, epsilon, tau)
-                    elif ot_type == 'partial':
-                        if epsilon == 0:
-                            pi = ot.partial.partial_wasserstein(a, b, M_cpu, mass)
-                        else:
-                            pi = ot.partial.entropic_partial_wasserstein(a, b, M_cpu, m=mass, reg=epsilon)
-                    pi = torch.from_numpy(pi).float().cuda()
-                    transfer_loss = torch.sum(pi * M)
-                    transfer_loss = plan[i, j] * transfer_loss
-                    total_loss += transfer_loss
-                    total_loss.backward()
-                    
-            optimizer.step()
-        else:
-            optimizer = lr_scheduler(optimizer, i, **schedule_param)
-            optimizer.zero_grad()
-
-            for i in range(k):
-                total_loss = 0
+        # Reforward
+        base_network.train()
+        optimizer = lr_scheduler(optimizer, i, **schedule_param)
+        optimizer.zero_grad()
+        
+        for i in range(k):
+            for j in range(k):
                 xs_mb = xs_mb_all[inds_xs[i]].cuda()
                 ys_mb = ys_mb_all[inds_xs[i]].cuda()
                 g_xs_mb, f_g_xs_mb = base_network(xs_mb)
                 # Classifier loss
-                classifier_loss = 1./k * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
-                total_loss += classifier_loss
-                xt_mb = xt_mb_all[inds_xs[i]].cuda()
+                classifier_loss = 1./(k**2) * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
+                if use_bomb:
+                    if plan[i, j] == 0:
+                        classifier_loss.backward()
+                        continue
+                xt_mb = xt_mb_all[inds_xt[0]].cuda()
                 g_xt_mb, f_g_xt_mb = base_network(xt_mb)
                 pred_xt = F.softmax(f_g_xt_mb, 1)
                 ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
@@ -333,7 +300,7 @@ def train(config):
                     if epsilon == 0:
                         pi = ot.emd(a, b, M_cpu)
                     else:
-                         pi = ot.sinkhorn(a, b, M_cpu, epsilon)
+                        pi = ot.sinkhorn(a, b, M_cpu, epsilon)
                 elif ot_type == 'unbalanced':
                     pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, M_cpu, epsilon, tau)
                 elif ot_type == 'partial':
@@ -343,12 +310,14 @@ def train(config):
                         pi = ot.partial.entropic_partial_wasserstein(a, b, M_cpu, m=mass, reg=epsilon)
                 pi = torch.from_numpy(pi).float().cuda()
                 transfer_loss = torch.sum(pi * M)
-                transfer_loss = 1./k * transfer_loss
-                total_loss += transfer_loss
+                if use_bomb:
+                    transfer_loss = plan[i, j] * transfer_loss
+                else:
+                    transfer_loss = 1./(k**2) * transfer_loss
+                total_loss = classifier_loss + transfer_loss
                 total_loss.backward()
-            
-            optimizer.step()
-
+        
+        optimizer.step()
     checkpoint = {"base_network": temp_model.state_dict()}
     torch.save(checkpoint, osp.join(config["output_path"], "final_model.pth"))
     return best_acc
@@ -385,10 +354,10 @@ if __name__ == "__main__":
     parser.add_argument('--eta1', type=float, default=0.1, help="weight of embedding loss")
     parser.add_argument('--eta2', type=float, default=0.1, help="weight of transportation loss")
     parser.add_argument('--epsilon', type=float, default=0., help="OT regularization coefficient")
+    parser.add_argument('--be', type=float, default=0., help="OT regularization coefficient")
     parser.add_argument('--tau', type=float, default=1., help="marginal penalization coeffidient")
     parser.add_argument('--mass', type=float, default=0.5, help="ratio of masses to be transported")
-    parser.add_argument('--use_bomb', action='store_true', help='whether to use BomB version')
-    parser.add_argument('--be', type=float, default=0., help="OT regularization coefficient between mini-batches")
+    parser.add_argument('--use_bomb', action='store_true', help='whether to use BoMb version')
     parser.add_argument('--k', type=int, default=1, help='number of minibatches')
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
@@ -413,10 +382,10 @@ if __name__ == "__main__":
     config["eta1"] = args.eta1
     config["eta2"] = args.eta2
     config["epsilon"] = args.epsilon
+    config["be"] = args.be
     config["tau"] = args.tau
     config["mass"] = args.mass
     config["use_bomb"] = args.use_bomb
-    config["be"] = args.be
     config["k"] = args.k
     config["output_for_test"] = True
     config["output_path"] = "snapshot/" + args.output_dir
@@ -446,7 +415,10 @@ if __name__ == "__main__":
                            "lr_param":{"lr":args.lr, "gamma":0.001, "power":0.75} }
 
     config["dataset"] = args.dset
-    test_bs = 4
+    config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":args.batch_size}, \
+                      "target":{"list_path":args.t_dset_path, "batch_size":args.batch_size}, \
+                      "test":{"list_path":args.t_dset_path, "batch_size":4}}
+
     if config["dataset"] == "office":
         if ("amazon" in args.s_dset_path and "webcam" in args.t_dset_path) or \
            ("webcam" in args.s_dset_path and "dslr" in args.t_dset_path) or \
@@ -464,18 +436,11 @@ if __name__ == "__main__":
     elif config["dataset"] == "office-home":
         config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 65
-        test_bs = 10
     elif config["dataset"] == "visda":
         config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 12
-        test_bs = 61
     else:
         raise ValueError('Dataset has not been implemented.')
-
-    config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":args.batch_size}, \
-                      "target":{"list_path":args.t_dset_path, "batch_size":args.batch_size}, \
-                      "test":{"list_path":args.t_dset_path, "batch_size":test_bs}}
-
     if args.lr != 0.001:
         config["optimizer"]["lr_param"]["lr"] = args.lr
         config["optimizer"]["lr_param"]["gamma"] = 0.001

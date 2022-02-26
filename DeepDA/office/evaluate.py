@@ -6,13 +6,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tensorboardX import SummaryWriter
 import network
-import loss
 import pre_process as prep
 from torch.utils.data import DataLoader
-from data_list import ImageList, ImageList_label
-from torch.autograd import Variable
+from data_list import ImageList
 import math
 
 class Inspector():
@@ -21,7 +18,7 @@ class Inspector():
         self.preds = []
         self.acc = []
 
-    def add_batch(self, pred, label, ad_out=None):
+    def add_batch(self, pred, label):
         maxpred, argpred = torch.max(pred.data.cpu(), dim=1)
         sample = np.concatenate([maxpred.numpy().reshape(-1,1), (argpred==label).float().numpy().reshape(-1,1)], axis=1)
         self.preds.append(sample)
@@ -31,6 +28,7 @@ class Inspector():
         preds = np.array(sorted(preds, key=lambda x: x[0], reverse = True))
         num = len(preds)
         n_ = 0
+
         for i in range(1, 21):
             n = int(math.floor(num*0.05*i))
             acc_top = sum(preds[:n, 1]) / n
@@ -46,8 +44,6 @@ class Eval():
         self.log_file = log_file
         self.confusion_matrix = np.zeros((self.num_class,)*2)
         self.ignore_index = None
-        self.synthia = True if num_class == 16 else False
-
 
     def Pixel_Accuracy(self):
         if np.sum(self.confusion_matrix) == 0:
@@ -58,74 +54,45 @@ class Eval():
             PA = np.diag(self.confusion_matrix).sum() / self.confusion_matrix.sum()
 
         return PA
-
-    def Mean_Pixel_Accuracy(self, out_16_13=False):
-        MPA = np.diag(self.confusion_matrix) / self.confusion_matrix.sum(axis=1)
-        if self.synthia:
-            MPA_16 = np.nanmean(MPA[:self.ignore_index])
-            MPA_13 = np.nanmean(MPA[synthia_set_16_to_13])
-            return MPA_16, MPA_13
-        if out_16_13:
-            MPA_16 = np.nanmean(MPA[synthia_set_16])
-            MPA_13 = np.nanmean(MPA[synthia_set_13])
-            return MPA_16, MPA_13
-        MPA = np.nanmean(MPA[:self.ignore_index])
-
-        return MPA
-
-    def Mean_Precision(self, out_16_13=False):
-        Precision = np.diag(self.confusion_matrix) / self.confusion_matrix.sum(axis=0)
-        if self.synthia:
-            Precision_16 = np.nanmean(Precision[:self.ignore_index])
-            Precision_13 = np.nanmean(Precision[synthia_set_16_to_13])
-            return Precision_16, Precision_13
-        if out_16_13:
-            Precision_16 = np.nanmean(Precision[synthia_set_16])
-            Precision_13 = np.nanmean(Precision[synthia_set_13])
-            return Precision_16, Precision_13
-        Precision = np.nanmean(Precision[:self.ignore_index])
-        return Precision
     
-    def Print_Every_class_Eval(self, out_16_13=False):
+    def Print_Every_class_Eval(self):
         MPA = np.diag(self.confusion_matrix) / (1+self.confusion_matrix.sum(axis=1))
-        Precision = np.diag(self.confusion_matrix) / self.confusion_matrix.sum(axis=0)
-        Class_ratio = np.sum(self.confusion_matrix, axis=1) / np.sum(self.confusion_matrix)
-        Pred_retio = np.sum(self.confusion_matrix, axis=0) / np.sum(self.confusion_matrix)
         pas = []
+
         for ind_class in tqdm(range(len(MPA))):
             pa = str(round(MPA[ind_class] * 100, 2)) if not np.isnan(MPA[ind_class]) else 'nan'
-            pc = str(round(Precision[ind_class] * 100, 2)) if not np.isnan(Precision[ind_class]) else 'nan'
-            cr = str(round(Class_ratio[ind_class] * 100, 2)) if not np.isnan(Class_ratio[ind_class]) else 'nan'
-            pr = str(round(Pred_retio[ind_class] * 100, 2)) if not np.isnan(Pred_retio[ind_class]) else 'nan'
             pas.append(pa)
+
         self.log_file.write(str(pas) + '\n')
         self.log_file.write(str(np.nanmean(MPA)) + '\n')
         self.log_file.flush()
 
     # generate confusion matrix
     def __generate_matrix(self, gt_image, pre_image):
-
         mask = (gt_image >= 0) & (gt_image < self.num_class)
         label = self.num_class * gt_image[mask].astype('int') + pre_image[mask]
         count = np.bincount(label, minlength=self.num_class**2)
         confusion_matrix = count.reshape(self.num_class, self.num_class)
+
         return confusion_matrix
 
     def add_batch(self, gt_image, pre_image):
         # assert the size of two images are same
         assert gt_image.shape == pre_image.shape
-
         self.confusion_matrix += self.__generate_matrix(gt_image, pre_image)
 
     def reset(self):
         self.confusion_matrix = np.zeros((self.num_class,) * 2)
 
 def image_classification_test(loader, model, test_10crop=True):
-    start_test = True
+    all_output = []
+    all_label = []
+    dataset = loader['test']
+
     with torch.no_grad():
         if test_10crop:
-            iter_test = [iter(loader['test'][i]) for i in range(10)]
-            for i in tqdm(range(len(loader['test'][0]))):
+            iter_test = [iter(dataset[i]) for i in range(10)]
+            for _ in tqdm(range(len(dataset[0]))):
                 data = [iter_test[j].next() for j in range(10)]
                 inputs = [data[j][0] for j in range(10)]
                 labels = data[0][1]
@@ -135,30 +102,25 @@ def image_classification_test(loader, model, test_10crop=True):
                 outputs = []
                 for j in range(10):
                     _, predict_out = model(inputs[j])
-                    outputs.append(nn.Softmax(dim=1)(predict_out))
-                outputs = sum(outputs)
-                if start_test:
-                    all_output = outputs.float().cpu()
-                    all_label = labels.float()
-                    start_test = False
-                else:
-                    all_output = torch.cat((all_output, outputs.float().cpu()), 0)
-                    all_label = torch.cat((all_label, labels.float()), 0)
+                    predict_out = nn.Softmax(dim=1)(predict_out)
+                    outputs.append(predict_out)
+                outputs = sum(outputs) / 10
+                all_output.append(outputs.float().cpu())
+                all_label.append(labels.float())
         else:
-            iter_test = iter(loader["test_noise"])
-            for i in tqdm(range(len(loader['test_noise']))):
+            iter_test = iter(dataset)
+            for _ in tqdm(range(len(dataset))):
                 data = iter_test.next()
                 inputs = data[0]
                 labels = data[1]
                 inputs = inputs.cuda()
                 _, outputs = model(inputs)
-                if start_test:
-                    all_output = outputs.float().cpu()
-                    all_label = labels.float()
-                    start_test = False
-                else:
-                    all_output = torch.cat((all_output, outputs.float().cpu()), 0)
-                    all_label = torch.cat((all_label, labels.float()), 0)
+                outputs = nn.Softmax(dim=1)(outputs)
+                all_output.append(outputs.float().cpu())
+                all_label.append(labels.float())
+    
+    all_output = torch.cat(all_output, 0)
+    all_label = torch.cat(all_label, 0)
     _, predict = torch.max(all_output, 1)
     accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
     return accuracy, predict.numpy().astype(int), all_label.numpy().astype(int)
@@ -290,10 +252,6 @@ if __name__ == "__main__":
     os.mkdir(config["output_path"])
     config["out_file"] = open(osp.join(config["output_path"], "log.txt"), "w")
 
-#     if len(config['gpu'].split(','))>1:
-#         args.batch_size = 32*len(config['gpu'].split(','))
-#         print("gpus:{}, batch size:{}".format(config['gpu'], args.batch_size))
-
     config["prep"] = {"test_10crop":True, 'params':{"resize_size":256, "crop_size":224, 'alexnet':False}}
     config["loss"] = {"trade_off":args.trade_off}
     if "ResNet" in args.net:
@@ -310,10 +268,7 @@ if __name__ == "__main__":
                            "lr_param":{"lr":args.lr, "gamma":0.001, "power":0.75} }
 
     config["dataset"] = args.dset
-    config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":args.batch_size}, \
-                      "target":{"list_path":args.t_dset_path, "batch_size":args.batch_size}, \
-                      "test":{"list_path":args.t_dset_path, "batch_size":4}}
-
+    test_bs = 4
     if config["dataset"] == "office":
         if ("amazon" in args.s_dset_path and "webcam" in args.t_dset_path) or \
            ("webcam" in args.s_dset_path and "dslr" in args.t_dset_path) or \
@@ -323,17 +278,26 @@ if __name__ == "__main__":
         elif ("amazon" in args.s_dset_path and "dslr" in args.t_dset_path) or \
              ("dslr" in args.s_dset_path and "webcam" in args.t_dset_path):
             config["optimizer"]["lr_param"]["lr"] = 0.0003 # optimal parameters
-        if "DANN" in config['method']:
+            args.stop_step = 20000
+        else:
             config["optimizer"]["lr_param"]["lr"] = 0.001
-        config["network"]["params"]["class_num"] = 31 
+        config["network"]["params"]["class_num"] = 31
+        args.stop_step = 20000
     elif config["dataset"] == "office-home":
         config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 65
+        test_bs = 10
     elif config["dataset"] == "visda":
         config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 12
+        test_bs = 61
     else:
         raise ValueError('Dataset has not been implemented.')
+
+    config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":args.batch_size}, \
+                      "target":{"list_path":args.t_dset_path, "batch_size":args.batch_size}, \
+                      "test":{"list_path":args.t_dset_path, "batch_size":test_bs}}
+
     if args.lr != 0.001:
         config["optimizer"]["lr_param"]["lr"] = args.lr
         config["optimizer"]["lr_param"]["gamma"] = 0.001

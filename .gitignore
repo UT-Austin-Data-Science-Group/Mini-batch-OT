@@ -135,6 +135,9 @@ DeepDA/digits/data/
 DeepDA/digits/*snapshot/
 DeepDA/office/*snapshot/
 DeepDA/office/data/office-home/images/
+DeepDA/office/data/visda-2017/train/
+DeepDA/office/data/visda-2017/test/
+DeepDA/office/data/visda-2017/validation/
 home_*.txt
 *.pdf
 *.csv

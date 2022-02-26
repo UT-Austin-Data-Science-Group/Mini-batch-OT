@@ -113,11 +113,12 @@ class BalancedBatchSampler(torch.utils.data.sampler.BatchSampler):
     """
 
     def __init__(self, labels, batch_size):
-        classes = sorted(set(labels.numpy()))
-        print(classes)
+        self.classes = sorted(set(labels.numpy()))
+        print(self.classes)
 
-        n_classes = len(classes)
+        n_classes = len(self.classes)
         self._n_samples = batch_size // n_classes
+        self._n_remain = batch_size % n_classes
         if self._n_samples == 0:
             raise ValueError(
                 f"batch_size should be bigger than the number of classes, got {batch_size}"
@@ -125,12 +126,12 @@ class BalancedBatchSampler(torch.utils.data.sampler.BatchSampler):
 
         self._class_iters = [
             InfiniteSliceIterator(np.where(labels == class_)[0], class_=class_)
-            for class_ in classes
+            for class_ in self.classes
         ]
 
-        batch_size = self._n_samples * n_classes
+        # batch_size = self._n_samples * n_classes
         self.n_dataset = len(labels)
-        self._n_batches = self.n_dataset // batch_size
+        self._n_batches = int(np.round(self.n_dataset // batch_size))
         if self._n_batches == 0:
             raise ValueError(
                 f"Dataset is not big enough to generate batches with size {batch_size}"
@@ -141,8 +142,14 @@ class BalancedBatchSampler(torch.utils.data.sampler.BatchSampler):
     def __iter__(self):
         for _ in range(self._n_batches):
             indices = []
+            add_class = set(np.random.choice(self.classes, self._n_remain, replace=False))
             for class_iter in self._class_iters:
-                indices.extend(class_iter.get(self._n_samples))
+                if class_iter.class_ in add_class:
+                    add_samples = 1
+                else:
+                    add_samples = 0
+                indices.extend(class_iter.get(self._n_samples + add_samples))
+                
             np.random.shuffle(indices)
             yield indices
 

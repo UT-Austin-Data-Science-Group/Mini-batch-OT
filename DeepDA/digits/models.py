@@ -27,15 +27,14 @@ class Classifier1(nn.Module):
 def weights_init(m):
     ''' Weight init function for layers '''
     classname = m.__class__.__name__
-    if classname.find('Conv2d') != -1 or classname.find('ConvTranspose2d') != -1:
-        nn.init.kaiming_uniform_(m.weight)
-        nn.init.zeros_(m.bias)
+    if classname.find('Conv') != -1:
+        m.weight.data.normal_(0.0, 0.02)
     elif classname.find('BatchNorm') != -1:
-        nn.init.normal_(m.weight, 1.0, 0.02)
-        nn.init.zeros_(m.bias)
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
     elif classname.find('Linear') != -1:
-        nn.init.xavier_normal_(m.weight)
-        nn.init.zeros_(m.bias)
+        m.weight.data.normal_(0.0, 0.1)
+        m.bias.data.fill_(0)
         
         
 def call_bn(bn, x):

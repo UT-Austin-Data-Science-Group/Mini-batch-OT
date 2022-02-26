@@ -42,55 +42,55 @@ class DigitsDA:
                 # Load data
                 xs_mb_all, ys_all = data
                 try:
-                    xt_mb_all, _ = next(target_loader)
+                    xt_mb_all, _ = next(target_loader_iter)
                     assert len(xt_mb_all) == batch_size
                 except:
-                    target_loader = iter(target_loader)
-                    xt_mb_all, _ = next(target_loader)
+                    target_loader_iter = iter(target_loader)
+                    xt_mb_all, _ = next(target_loader_iter)
                 inds_xs = np.split(np.array(range(xs_mb_all.shape[0])), k)
 
-            # Forward
-            optimizer_g.zero_grad()
-            optimizer_f.zero_grad()
-                
-            for i in range(k):
-                total_loss = 0
-                xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                g_xs_mb = self.model_g(xs_mb)
-                f_g_xs_mb = self.model_f(g_xs_mb)
-                ys = ys_all[inds_xs[i]].cuda()
-                # Classifier loss
-                s_loss = 1./k * criterion(f_g_xs_mb, ys)
-                total_loss += s_loss
-                xt_mb = xt_mb_all[inds_xs[i]].cuda()
-                g_xt_mb = self.model_g(xt_mb)
-                f_g_xt_mb = self.model_f(g_xt_mb)
-                pred_xt = F.softmax(f_g_xt_mb, 1)
-                # Ground cost
-                embed_cost = torch.cdist(g_xs_mb, g_xt_mb) ** 2
-                ys_oh = F.one_hot(ys, num_classes=self.n_class).float()
-                t_cost = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
-                total_cost = self.eta1 * embed_cost + self.eta2 * t_cost
-                # OT computation
-                a, b = ot.unif(g_xs_mb.size()[0]), ot.unif(g_xt_mb.size()[0])
-                if method == 'jumbot':
-                    pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, total_cost.detach().cpu().numpy(), self.epsilon, self.tau)
-                elif method == 'jdot':
-                    if self.epsilon == 0:
-                        pi = ot.emd(a, b, total_cost.detach().cpu().numpy())
-                    else:
-                        pi = ot.sinkhorn(a, b, total_cost.detach().cpu().numpy(), reg=self.epsilon)
-                elif method == 'jpmbot':
-                    if self.epsilon == 0:
-                        pi = ot.partial.partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), self.mass)
-                    else:
-                        pi = ot.partial.entropic_partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), m=self.mass, reg=self.epsilon)
-                pi = torch.from_numpy(pi).float().cuda()
-                da_loss = 1./k * torch.sum(pi * total_cost)
-                mloss = da_loss
-                total_loss += mloss
-                total_loss.backward()
+                # Forward
+                optimizer_g.zero_grad()
+                optimizer_f.zero_grad()
                     
+                for i in range(k):
+                    total_loss = 0
+                    xs_mb = xs_mb_all[inds_xs[i]].cuda()
+                    g_xs_mb = self.model_g(xs_mb)
+                    f_g_xs_mb = self.model_f(g_xs_mb)
+                    ys = ys_all[inds_xs[i]].cuda()
+                    # Classifier loss
+                    s_loss = 1./k * criterion(f_g_xs_mb, ys)
+                    total_loss += s_loss
+                    xt_mb = xt_mb_all[inds_xs[i]].cuda()
+                    g_xt_mb = self.model_g(xt_mb)
+                    f_g_xt_mb = self.model_f(g_xt_mb)
+                    pred_xt = F.softmax(f_g_xt_mb, 1)
+                    # Ground cost
+                    embed_cost = torch.cdist(g_xs_mb, g_xt_mb) ** 2
+                    ys_oh = F.one_hot(ys, num_classes=self.n_class).float()
+                    t_cost = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
+                    total_cost = self.eta1 * embed_cost + self.eta2 * t_cost
+                    # OT computation
+                    a, b = ot.unif(g_xs_mb.size()[0]), ot.unif(g_xt_mb.size()[0])
+                    if method == 'jumbot':
+                        pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, total_cost.detach().cpu().numpy(), self.epsilon, self.tau)
+                    elif method == 'jdot':
+                        if self.epsilon == 0:
+                            pi = ot.emd(a, b, total_cost.detach().cpu().numpy())
+                        else:
+                            pi = ot.sinkhorn(a, b, total_cost.detach().cpu().numpy(), reg=self.epsilon)
+                    elif method == 'jpmbot':
+                        if self.epsilon == 0:
+                            pi = ot.partial.partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), self.mass)
+                        else:
+                            pi = ot.partial.entropic_partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), m=self.mass, reg=self.epsilon)
+                    pi = torch.from_numpy(pi).float().cuda()
+                    da_loss = 1./k * torch.sum(pi * total_cost)
+                    mloss = da_loss
+                    total_loss += mloss
+                    total_loss.backward()
+                        
                 optimizer_g.step()
                 optimizer_f.step()
 
@@ -126,15 +126,16 @@ class DigitsDA:
                 # Load data
                 xs_mb_all, ys_all = data
                 try:
-                    xt_mb_all, _ = next(target_loader)
+                    xt_mb_all, _ = next(target_loader_iter)
                     assert len(xt_mb_all) == batch_size
                 except:
-                    target_loader = iter(target_loader)
-                    xt_mb_all, _ = next(target_loader)
+                    target_loader_iter = iter(target_loader)
+                    xt_mb_all, _ = next(target_loader_iter)
                 inds_xs = np.split(np.array(range(xs_mb_all.shape[0])), k)
                 inds_xt = np.split(np.array(range(xt_mb_all.shape[0])), k)
 
                 list_da_loss = []
+                # Forward
                 with torch.no_grad():
                     for i in range(k):
                         xs_mb = xs_mb_all[inds_xs[i]].cuda()
@@ -175,52 +176,52 @@ class DigitsDA:
                     else:
                         plan = ot.sinkhorn([], [], big_C.detach().cpu().numpy(), reg=self.batch_epsilon)
 
-            # Reforward
-            optimizer_g.zero_grad()
-            optimizer_f.zero_grad()
-                
-            for i in range(k):
-                for j in range(k):
-                    total_loss = 0
-                    xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                    g_xs_mb = self.model_g(xs_mb)
-                    f_g_xs_mb = self.model_f(g_xs_mb)
-                    ys = ys_all[inds_xs[i]].cuda()
-                    # Classifier loss
-                    s_loss = 1./(k**2) * criterion(f_g_xs_mb, ys)
-                    total_loss += s_loss
-                    if plan[i,j] == 0:
-                        total_loss.backward()
-                        continue
-                    xt_mb = xt_mb_all[inds_xt[j]].cuda()
-                    g_xt_mb = self.model_g(xt_mb)
-                    f_g_xt_mb = self.model_f(g_xt_mb)
-                    pred_xt = F.softmax(f_g_xt_mb, 1)
-                    # Ground cost
-                    embed_cost = torch.cdist(g_xs_mb, g_xt_mb) ** 2
-                    ys_oh = F.one_hot(ys, num_classes=self.n_class).float()
-                    t_cost = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
-                    total_cost = self.eta1 * embed_cost + self.eta2 * t_cost
-                    # OT computation
-                    a, b = ot.unif(g_xs_mb.size()[0]), ot.unif(g_xt_mb.size()[0])
-                    if method == 'jumbot':
-                        pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, total_cost.detach().cpu().numpy(), self.epsilon, self.tau)
-                    elif method == 'jdot':
-                        if self.epsilon == 0:
-                            pi = ot.emd(a, b, total_cost.detach().cpu().numpy())
-                        else:
-                            pi = ot.sinkhorn(a, b, total_cost.detach().cpu().numpy(), reg=self.epsilon)
-                    elif method == 'jpmbot':
-                        if self.epsilon == 0:
-                            pi = ot.partial.partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), self.mass)
-                        else:
-                            pi = ot.partial.entropic_partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), m=self.mass, reg=self.epsilon)
-                    pi = torch.from_numpy(pi).float().cuda()
-                    da_loss = torch.sum(pi * total_cost)
-                    mloss = plan[i,j] * da_loss
-                    total_loss += mloss
-                    total_loss.backward()
+                # Reforward
+                optimizer_g.zero_grad()
+                optimizer_f.zero_grad()
                     
+                for i in range(k):
+                    for j in range(k):
+                        total_loss = 0
+                        xs_mb = xs_mb_all[inds_xs[i]].cuda()
+                        g_xs_mb = self.model_g(xs_mb)
+                        f_g_xs_mb = self.model_f(g_xs_mb)
+                        ys = ys_all[inds_xs[i]].cuda()
+                        # Classifier loss
+                        s_loss = 1./(k**2) * criterion(f_g_xs_mb, ys)
+                        total_loss += s_loss
+                        if plan[i,j] == 0:
+                            total_loss.backward()
+                            continue
+                        xt_mb = xt_mb_all[inds_xt[j]].cuda()
+                        g_xt_mb = self.model_g(xt_mb)
+                        f_g_xt_mb = self.model_f(g_xt_mb)
+                        pred_xt = F.softmax(f_g_xt_mb, 1)
+                        # Ground cost
+                        embed_cost = torch.cdist(g_xs_mb, g_xt_mb) ** 2
+                        ys_oh = F.one_hot(ys, num_classes=self.n_class).float()
+                        t_cost = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
+                        total_cost = self.eta1 * embed_cost + self.eta2 * t_cost
+                        # OT computation
+                        a, b = ot.unif(g_xs_mb.size()[0]), ot.unif(g_xt_mb.size()[0])
+                        if method == 'jumbot':
+                            pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, total_cost.detach().cpu().numpy(), self.epsilon, self.tau)
+                        elif method == 'jdot':
+                            if self.epsilon == 0:
+                                pi = ot.emd(a, b, total_cost.detach().cpu().numpy())
+                            else:
+                                pi = ot.sinkhorn(a, b, total_cost.detach().cpu().numpy(), reg=self.epsilon)
+                        elif method == 'jpmbot':
+                            if self.epsilon == 0:
+                                pi = ot.partial.partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), self.mass)
+                            else:
+                                pi = ot.partial.entropic_partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), m=self.mass, reg=self.epsilon)
+                        pi = torch.from_numpy(pi).float().cuda()
+                        da_loss = torch.sum(pi * total_cost)
+                        mloss = plan[i,j] * da_loss
+                        total_loss += mloss
+                        total_loss.backward()
+                        
                 optimizer_g.step()
                 optimizer_f.step()
 

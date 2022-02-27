@@ -188,26 +188,26 @@ def train(config):
     best_step = 0
     best_acc = 0.0
 
-    for i in tqdm(range(config["num_iterations"]), total=config["num_iterations"]):
-        if i % config["test_interval"] == config["test_interval"]-1:
+    for id_iter in tqdm(range(config["num_iterations"]), total=config["num_iterations"]):
+        if id_iter % config["test_interval"] == config["test_interval"]-1:
             base_network.eval()
             temp_acc = image_classification_test(dset_loaders, \
                 base_network, test_10crop=prep_config["test_10crop"])
             temp_model = base_network #nn.Sequential(base_network)
             if temp_acc > best_acc:
-                best_step = i
+                best_step = id_iter
                 best_acc = temp_acc
                 best_model = temp_model
                 checkpoint = {"base_network": best_model.state_dict()}
                 torch.save(checkpoint, osp.join(config["output_path"], "best_model.pth"))
                 print("\n##########     save the best model.    #############\n")
-            log_str = "iter: {:05d}, precision: {:.5f}".format(i, temp_acc)
+            log_str = "iter: {:05d}, precision: {:.5f}".format(id_iter, temp_acc)
             config["out_file"].write(log_str+"\n")
             config["out_file"].flush()
-            writer.add_scalar('precision', temp_acc, i)
+            writer.add_scalar('precision', temp_acc, id_iter)
             print(log_str)
 
-        if i >= config["stop_step"]:
+        if id_iter >= config["stop_step"]:
             log_str = "method {}, iter: {:05d}, precision: {:.5f}".format(config["output_path"], best_step, best_acc)
             config["final_log"].write(log_str+"\n")
             config["final_log"].flush()
@@ -215,9 +215,9 @@ def train(config):
                  
         ## train one iter
         base_network.train()
-        if i % len_train_source == 0:
+        if id_iter % len_train_source == 0:
             iter_source = iter(dset_loaders["source"])
-        if i % len_train_target == 0:
+        if id_iter % len_train_target == 0:
             iter_target = iter(dset_loaders["target"])
         xs_mb_all, ys_mb_all = iter_source.next()
         xt_mb_all, _ = iter_target.next()
@@ -265,7 +265,7 @@ def train(config):
                     plan = ot.sinkhorn([], [], big_C.detach().cpu().numpy(), reg=be)
         
             # Reforward
-            optimizer = lr_scheduler(optimizer, i, **schedule_param)
+            optimizer = lr_scheduler(optimizer, id_iter, **schedule_param)
             optimizer.zero_grad()
             
             for i in range(k):
@@ -309,7 +309,7 @@ def train(config):
                     
             optimizer.step()
         else:
-            optimizer = lr_scheduler(optimizer, i, **schedule_param)
+            optimizer = lr_scheduler(optimizer, id_iter, **schedule_param)
             optimizer.zero_grad()
 
             for i in range(k):

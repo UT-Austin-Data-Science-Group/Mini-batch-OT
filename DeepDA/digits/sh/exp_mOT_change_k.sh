@@ -18,7 +18,7 @@ ETA1=0.001
 ETA2=0.0001
 SEED=1980
 
-for K in 1
+for K in 1 2 4
 do
     EPOCH=$(echo "scale=0; $K * 10" | bc -l)
     for LR in 2e-4

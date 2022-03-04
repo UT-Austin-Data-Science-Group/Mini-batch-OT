@@ -1,9 +1,6 @@
-import numpy as np
 import torch
 import torch.nn as nn
-import torchvision
 from torchvision import models
-from torch.autograd import Variable
 
 
 def init_weights(m):
@@ -19,6 +16,30 @@ def init_weights(m):
         nn.init.zeros_(m.bias)
 
 resnet_dict = {"ResNet18":models.resnet18, "ResNet34":models.resnet34, "ResNet50":models.resnet50, "ResNet101":models.resnet101, "ResNet152":models.resnet152}
+
+from torch.nn.utils.weight_norm import WeightNorm
+
+class distLinear(nn.Module):
+    def __init__(self, indim, outdim, scale_factor=10):
+        super(distLinear, self).__init__()
+        self.indim = indim
+        self.outdim = outdim
+        self.L = nn.Linear( indim, outdim, bias = False)
+        nn.init.xavier_normal_(self.L.weight)
+        self.class_wise_learnable_norm = True  #See the issue#4&8 in the github 
+        if self.class_wise_learnable_norm:      
+            WeightNorm.apply(self.L, 'weight', dim=0) #split the weight update component to direction and norm      
+
+        self.scale_factor = scale_factor #in omniglot, a larger scale factor is required to handle >1000 output classes.
+
+    def forward(self, x_normalized):
+        if not self.class_wise_learnable_norm:
+            L_norm = torch.norm(self.L.weight.data, p=2, dim =1).unsqueeze(1).expand_as(self.L.weight.data)
+            self.L.weight.data = self.L.weight.data.div(L_norm + 0.00001)
+        cos_dist = self.L(x_normalized) #matrix product by forward function, but when using WeightNorm, this also multiply the cosine distance by a class-wise learnable norm, see the issue#4&8 in the github
+        scores = self.scale_factor* (cos_dist) 
+
+        return scores
 
 class ResNetFc(nn.Module):
     def __init__(self, resnet_name, use_bottleneck=True, bottleneck_dim=256, new_cls=False, class_num=1000, cos_dist=False):

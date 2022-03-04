@@ -214,6 +214,7 @@ def train(config):
                     xs_mb = xs_mb_all[inds_xs[i]].cuda()
                     ys_mb = ys_mb_all[inds_xs[i]].cuda()
                     g_xs_mb, f_g_xs_mb = base_network(xs_mb)
+                    
                     for j in range(k):
                         xt_mb = xt_mb_all[inds_xt[j]].cuda()
                         g_xt_mb, f_g_xt_mb = base_network(xt_mb)
@@ -245,49 +246,47 @@ def train(config):
                     plan = ot.emd([], [], big_C.detach().cpu().numpy())
                 else:
                     plan = ot.sinkhorn([], [], big_C.detach().cpu().numpy(), reg=be)
-        
+                mapping = np.argmax(plan, axis=1)
+
             # Reforward
             optimizer = lr_scheduler(optimizer, id_iter, **schedule_param)
             optimizer.zero_grad()
             
             for i in range(k):
-                for j in range(k):
-                    total_loss = 0
-                    xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                    ys_mb = ys_mb_all[inds_xs[i]].cuda()
-                    g_xs_mb, f_g_xs_mb = base_network(xs_mb)
-                    # Classifier loss
-                    classifier_loss = 1./(k**2) * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
-                    total_loss += classifier_loss
-                    if plan[i, j] == 0:
-                        total_loss.backward()
-                        continue
-                    xt_mb = xt_mb_all[inds_xt[j]].cuda()
-                    g_xt_mb, f_g_xt_mb = base_network(xt_mb)
-                    pred_xt = F.softmax(f_g_xt_mb, 1)
-                    ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
-                    M_embed = torch.cdist(g_xs_mb, g_xt_mb)**2
-                    M_sce = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
-                    M = eta1 * M_embed + eta2 * M_sce
-                    a, b = ot.unif(g_xs_mb.size(0)), ot.unif(g_xt_mb.size(0))
-                    M_cpu = M.detach().cpu().numpy()
-                    if ot_type == 'balanced':
-                        if epsilon == 0:
-                            pi = ot.emd(a, b, M_cpu)
-                        else:
-                            pi = ot.sinkhorn(a, b, M_cpu, epsilon)
-                    elif ot_type == 'unbalanced':
-                        pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, M_cpu, epsilon, tau)
-                    elif ot_type == 'partial':
-                        if epsilon == 0:
-                            pi = ot.partial.partial_wasserstein(a, b, M_cpu, mass)
-                        else:
-                            pi = ot.partial.entropic_partial_wasserstein(a, b, M_cpu, m=mass, reg=epsilon)
-                    pi = torch.from_numpy(pi).float().cuda()
-                    transfer_loss = torch.sum(pi * M)
-                    transfer_loss = plan[i, j] * transfer_loss
-                    total_loss += transfer_loss
-                    total_loss.backward()
+                j = mapping[i]
+                total_loss = 0
+                xs_mb = xs_mb_all[inds_xs[i]].cuda()
+                ys_mb = ys_mb_all[inds_xs[i]].cuda()
+                g_xs_mb, f_g_xs_mb = base_network(xs_mb)
+                # Classifier loss
+                classifier_loss = 1./k * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
+                total_loss += classifier_loss
+                xt_mb = xt_mb_all[inds_xt[j]].cuda()
+                g_xt_mb, f_g_xt_mb = base_network(xt_mb)
+                pred_xt = F.softmax(f_g_xt_mb, 1)
+                ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
+                M_embed = torch.cdist(g_xs_mb, g_xt_mb)**2
+                M_sce = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
+                M = eta1 * M_embed + eta2 * M_sce
+                a, b = ot.unif(g_xs_mb.size(0)), ot.unif(g_xt_mb.size(0))
+                M_cpu = M.detach().cpu().numpy()
+                if ot_type == 'balanced':
+                    if epsilon == 0:
+                        pi = ot.emd(a, b, M_cpu)
+                    else:
+                        pi = ot.sinkhorn(a, b, M_cpu, epsilon)
+                elif ot_type == 'unbalanced':
+                    pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, M_cpu, epsilon, tau)
+                elif ot_type == 'partial':
+                    if epsilon == 0:
+                        pi = ot.partial.partial_wasserstein(a, b, M_cpu, mass)
+                    else:
+                        pi = ot.partial.entropic_partial_wasserstein(a, b, M_cpu, m=mass, reg=epsilon)
+                pi = torch.from_numpy(pi).float().cuda()
+                transfer_loss = torch.sum(pi * M)
+                transfer_loss = plan[i, j] * transfer_loss
+                total_loss += transfer_loss
+                total_loss.backward()
                     
             optimizer.step()
         else:

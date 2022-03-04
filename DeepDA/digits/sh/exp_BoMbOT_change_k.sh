@@ -20,7 +20,7 @@ SEED=1980
 
 for BE in 0
 do
-    for K in 2
+    for K in 2 4
     do
         EPOCH=$(echo "scale=0; $K * 10" | bc -l)
         for LR in 2e-4

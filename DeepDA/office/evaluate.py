@@ -220,16 +220,10 @@ if __name__ == "__main__":
     parser.add_argument('--dset', type=str, default='office', choices=['office', 'visda', 'office-home'], help="The dataset or source dataset used")
     parser.add_argument('--s_dset_path', type=str, default='./data/office/amazon_31_list.txt', help="The source dataset path list")
     parser.add_argument('--t_dset_path', type=str, default='./data/office/webcam_10_list.txt', help="The target dataset path list")
-    parser.add_argument('--test_interval', type=int, default=500, help="interval of two continuous test phase")
-    parser.add_argument('--snapshot_interval', type=int, default=5000, help="interval of two continuous output model")
     parser.add_argument('--output_dir', type=str, default='san', help="output directory of our model (in ../snapshot directory)")
     parser.add_argument('--restore_dir', type=str, default=None, help="restore directory of our model (in ../snapshot directory)")
-    parser.add_argument('--lr', type=float, default=0.001, help="learning rate")
-    parser.add_argument('--trade_off', type=float, default=1.0, help="trade_off")
     parser.add_argument('--batch_size', type=int, default=36, help="batch_size")
     parser.add_argument('--cos_dist', default=False, type=str2bool, help="cos_dist")
-    parser.add_argument('--threshold', default=0.9, type=float, help="threshold of pseudo labels")
-    parser.add_argument('--stop_step', type=int, default=0, help="stop_step")
     parser.add_argument('--final_log', type=str, default=None, help="final_log file")
     parser.add_argument('--loss_type', type=str, default='all', help="whether add reg_loss or correct_loss.")
     args = parser.parse_args()
@@ -239,9 +233,6 @@ if __name__ == "__main__":
     config = {}
     config['method'] = args.method
     config["gpu"] = args.gpu_id
-    config["num_iterations"] = args.stop_step + 1
-    config["test_interval"] = args.test_interval
-    config["snapshot_interval"] = args.snapshot_interval
     config["output_for_test"] = True
     config["output_path"] = "snapshot/" + args.output_dir
     config["restore_path"] = "snapshot/" + args.restore_dir if args.restore_dir else None
@@ -253,7 +244,7 @@ if __name__ == "__main__":
     config["out_file"] = open(osp.join(config["output_path"], "log.txt"), "w")
 
     config["prep"] = {"test_10crop":True, 'params':{"resize_size":256, "crop_size":224, 'alexnet':False}}
-    config["loss"] = {"trade_off":args.trade_off}
+    
     if "ResNet" in args.net:
         net = network.ResNetFc
         config["network"] = {"name":net, \
@@ -263,32 +254,14 @@ if __name__ == "__main__":
         config["network"] = {"name":network.VGGFc, \
             "params":{"vgg_name":args.net, "use_bottleneck":True, "bottleneck_dim":256, "new_cls":True} }
 
-    config["optimizer"] = {"type":optim.SGD, "optim_params":{'lr':args.lr, "momentum":0.9, \
-                           "weight_decay":0.0005, "nesterov":True}, "lr_type":"inv", \
-                           "lr_param":{"lr":args.lr, "gamma":0.001, "power":0.75} }
-
     config["dataset"] = args.dset
     test_bs = 4
     if config["dataset"] == "office":
-        if ("amazon" in args.s_dset_path and "webcam" in args.t_dset_path) or \
-           ("webcam" in args.s_dset_path and "dslr" in args.t_dset_path) or \
-           ("webcam" in args.s_dset_path and "amazon" in args.t_dset_path) or \
-           ("dslr" in args.s_dset_path and "amazon" in args.t_dset_path):
-            config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
-        elif ("amazon" in args.s_dset_path and "dslr" in args.t_dset_path) or \
-             ("dslr" in args.s_dset_path and "webcam" in args.t_dset_path):
-            config["optimizer"]["lr_param"]["lr"] = 0.0003 # optimal parameters
-            args.stop_step = 20000
-        else:
-            config["optimizer"]["lr_param"]["lr"] = 0.001
         config["network"]["params"]["class_num"] = 31
-        args.stop_step = 20000
     elif config["dataset"] == "office-home":
-        config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 65
         test_bs = 10
     elif config["dataset"] == "visda":
-        config["optimizer"]["lr_param"]["lr"] = 0.001 # optimal parameters
         config["network"]["params"]["class_num"] = 12
         test_bs = 61
     else:
@@ -297,17 +270,9 @@ if __name__ == "__main__":
     config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":args.batch_size}, \
                       "target":{"list_path":args.t_dset_path, "batch_size":args.batch_size}, \
                       "test":{"list_path":args.t_dset_path, "batch_size":test_bs}}
-
-    if args.lr != 0.001:
-        config["optimizer"]["lr_param"]["lr"] = args.lr
-        config["optimizer"]["lr_param"]["gamma"] = 0.001
     config["out_file"].write(str(config) + '\n')
     config["out_file"].flush()
-    config["threshold"] = args.threshold
-    if args.stop_step == 0:
-        config["stop_step"] = 10000
-    else:
-        config["stop_step"] = args.stop_step
+
     if args.final_log is None:
         config["final_log"] = open('log.txt', "a")
     else:

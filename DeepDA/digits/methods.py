@@ -244,6 +244,10 @@ class DigitsDA:
         torch.save(checkpoint, os.path.join(self.out_dir, "final_model.pth"))
 
     def fit_bomb2(self, source_loader, target_loader, test_loader, n_epochs, criterion=nn.CrossEntropyLoss(), lr=2e-4, k=1, batch_size=25, method='jumbot'):
+        """
+        A more stable version when the training loss is small.
+        However, it does not work well with the entropic version of BoMb.
+        """
         criterion = nn.CrossEntropyLoss()
         optimizer_g = torch.optim.Adam(self.model_g.parameters(), lr=lr)
         optimizer_f = torch.optim.Adam(self.model_f.parameters(), lr=lr)

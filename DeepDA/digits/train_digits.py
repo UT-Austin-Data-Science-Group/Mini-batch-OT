@@ -124,9 +124,10 @@ def main():
                         batch_epsilon=args.batch_epsilon,
                         mass=args.mass, tau=args.tau, 
                         test_interval=args.test_interval)
-    model_da.source_only(source_train_dl, lr=args.lr) # train on source domain only
+    model_da.source_only(source_train_dl, lr=args.lr) # Train on source domain only
     if args.use_bomb:
-        model_da.fit_bomb(source_train_dl, target_train_dl, target_test_dl, 
+        # Use the stable version because the training loss is small
+        model_da.fit_bomb2(source_train_dl, target_train_dl, target_test_dl, 
                 n_epochs=n_epoch, lr=args.lr, k=args.k, 
                 batch_size=batch_size, method=args.method)
     else:

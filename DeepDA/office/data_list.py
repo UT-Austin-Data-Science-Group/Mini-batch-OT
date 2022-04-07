@@ -1,16 +1,9 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data
 from torch.utils.data import Dataset
-from torch.utils.data.sampler import BatchSampler
-from tqdm import tqdm
 import numpy as np
-import random
 from PIL import Image
 from torch.utils.data import Dataset
-import os
-import os.path
 
 def make_dataset(image_list, labels):
     if labels:
@@ -38,8 +31,7 @@ class ImageList(Dataset):
     def __init__(self, image_list, labels=None, transform=None, target_transform=None, mode='RGB'):
         imgs = make_dataset(image_list, labels)
         if len(imgs) == 0:
-            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
-                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
+            raise(RuntimeError("Found 0 images"))
 
         self.imgs = imgs
         self.transform = transform
@@ -78,8 +70,7 @@ class ImageValueList(Dataset):
                  loader=rgb_loader):
         imgs = make_dataset(image_list, labels)
         if len(imgs) == 0:
-            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
-                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
+            raise(RuntimeError("Found 0 images"))
 
         self.imgs = imgs
         self.values = [1.0] * len(imgs)

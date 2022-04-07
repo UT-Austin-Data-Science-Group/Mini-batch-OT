@@ -165,8 +165,6 @@ def train(config):
     be = config['be']
     tau = config['tau']
     mass = config['mass']
-    len_train_source = len(dset_loaders["source"])
-    len_train_target = len(dset_loaders["target"])
     best_step = 0
     best_acc = 0.0
 
@@ -197,26 +195,32 @@ def train(config):
                  
         ## train one iter
         base_network.train()
-        if id_iter % len_train_source == 0:
-            iter_source = iter(dset_loaders["source"])
-        if id_iter % len_train_target == 0:
-            iter_target = iter(dset_loaders["target"])
-        xs_mb_all, ys_mb_all = iter_source.next()
-        xt_mb_all, _ = iter_target.next()
-        inds_xs = np.split(np.arange(xs_mb_all.size(0)), k)
-        inds_xt = np.split(np.arange(xt_mb_all.size(0)), k)
+        xs_mb_all, ys_mb_all, xt_mb_all = [], [], []
+
+        for _ in range(k):
+            try:
+                xs_mb, ys_mb = next(iter_source)
+                xt_mb, _ = next(iter_target)
+            except:
+                iter_source = iter(dset_loaders["source"])
+                iter_target = iter(dset_loaders["target"])
+                xs_mb, ys_mb = next(iter_source)
+                xt_mb, _ = next(iter_target)
+            xs_mb_all.append(xs_mb)
+            ys_mb_all.append(ys_mb)
+            xt_mb_all.append(xt_mb)
         list_transfer_loss = []
         
         if use_bomb:
             # Forward
             with torch.no_grad():
                 for i in range(k):
-                    xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                    ys_mb = ys_mb_all[inds_xs[i]].cuda()
+                    xs_mb = xs_mb_all[i].cuda()
+                    ys_mb = ys_mb_all[i].cuda()
                     g_xs_mb, f_g_xs_mb = base_network(xs_mb)
                     
                     for j in range(k):
-                        xt_mb = xt_mb_all[inds_xt[j]].cuda()
+                        xt_mb = xt_mb_all[j].cuda()
                         g_xt_mb, f_g_xt_mb = base_network(xt_mb)
                         pred_xt = F.softmax(f_g_xt_mb, 1)
                         ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
@@ -255,13 +259,13 @@ def train(config):
             for i in range(k):
                 j = mapping[i]
                 total_loss = 0
-                xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                ys_mb = ys_mb_all[inds_xs[i]].cuda()
+                xs_mb = xs_mb_all[i].cuda()
+                ys_mb = ys_mb_all[i].cuda()
                 g_xs_mb, f_g_xs_mb = base_network(xs_mb)
                 # Classifier loss
                 classifier_loss = 1./k * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
                 total_loss += classifier_loss
-                xt_mb = xt_mb_all[inds_xt[j]].cuda()
+                xt_mb = xt_mb_all[j].cuda()
                 g_xt_mb, f_g_xt_mb = base_network(xt_mb)
                 pred_xt = F.softmax(f_g_xt_mb, 1)
                 ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
@@ -295,13 +299,13 @@ def train(config):
 
             for i in range(k):
                 total_loss = 0
-                xs_mb = xs_mb_all[inds_xs[i]].cuda()
-                ys_mb = ys_mb_all[inds_xs[i]].cuda()
+                xs_mb = xs_mb_all[i].cuda()
+                ys_mb = ys_mb_all[i].cuda()
                 g_xs_mb, f_g_xs_mb = base_network(xs_mb)
                 # Classifier loss
                 classifier_loss = 1./k * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
                 total_loss += classifier_loss
-                xt_mb = xt_mb_all[inds_xs[i]].cuda()
+                xt_mb = xt_mb_all[i].cuda()
                 g_xt_mb, f_g_xt_mb = base_network(xt_mb)
                 pred_xt = F.softmax(f_g_xt_mb, 1)
                 ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
@@ -383,7 +387,6 @@ if __name__ == "__main__":
 
     # train config
     config = {}
-    args.batch_size = args.batch_size * args.k
     config['args'] = args
     config["gpu"] = args.gpu_id
     config["num_iterations"] = args.stop_step + 1

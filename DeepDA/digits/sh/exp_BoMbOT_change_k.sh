@@ -9,6 +9,13 @@ SOURCE=usps
 TARGET=mnist
 DATA_DIR=./data
 M=25
+if [ $SOURCE = 'usps' ]
+then
+    SCALE=1
+else
+    SCALE=2
+fi
+M=$(echo "scale=0; $M * $SCALE" | bc -l)
 TEST_INTERVAL=1
 CLASS=10
 EPSILON=0.0

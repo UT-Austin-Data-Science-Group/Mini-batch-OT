@@ -3,10 +3,12 @@ import numpy as np
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import torch.nn as nn
 torch.multiprocessing.set_sharing_strategy('file_system')
 from models import Classifier1, weights_init, USPS_generator, SVHN_generator
-from utils import *
+from utils import BalancedBatchSampler
 from methods import DigitsDA
+import os
 import cfg
 import logging
 from tqdm import tqdm

@@ -22,7 +22,7 @@ TAU=1.
 MASS=0.9
 ETA1=0.1
 ETA2=0.1
-SEED=1982
+SEED=1980
 
 for M in 5 10 25
 do

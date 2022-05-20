@@ -2,8 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from torchvision.models import resnet50
+
 
 class Classifier1(nn.Module):
     ''' 1 FC layer'''

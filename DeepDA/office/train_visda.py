@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from tensorboardX import SummaryWriter
 import network
 import pre_process as prep
 from torch.utils.data import DataLoader
@@ -153,8 +152,6 @@ def train(config):
     if len(gpus) > 1:
         base_network = nn.DataParallel(base_network, device_ids=[int(i) for i in range(len(gpus))])
 
-    writer = SummaryWriter(config["output_path"])
-
     ## train   
     use_bomb = config['use_bomb']
     ot_type = config['ot_type']
@@ -184,7 +181,6 @@ def train(config):
             log_str = "iter: {:05d}, precision: {:.5f}".format(id_iter, temp_acc)
             config["out_file"].write(log_str+"\n")
             config["out_file"].flush()
-            writer.add_scalar('precision', temp_acc, id_iter)
             print(log_str)
 
         if id_iter >= config["stop_step"]:

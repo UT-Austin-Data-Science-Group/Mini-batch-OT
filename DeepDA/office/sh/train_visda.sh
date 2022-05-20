@@ -90,14 +90,14 @@ do
     esac
 
     # train the model
-    for i in {10..10}
+    for i in {15..15}
     do
         MASS=$(echo "scale=2; $i / 20" | bc -l)
         echo "-- mass = $MASS"
         output_dir="${DES}_mass0${MASS}_k${K}_m${M}_epsilon${EPSILON}"
         echo "Begin in ${output_dir}"
         echo "log in ${final_log}_log.txt"
-        python train.py --gpu_id ${gpus} \
+        python train_visda.py --gpu_id ${gpus} \
                         --net ResNet50 \
                         --dset visda \
                         --test_interval $TEST_INTERVAL \

@@ -153,186 +153,151 @@ def train(config):
         base_network = nn.DataParallel(base_network, device_ids=[int(i) for i in range(len(gpus))])
 
     ## train   
-    use_bomb = config['use_bomb']
     ot_type = config['ot_type']
     k = config['k']
     eta1 = config['eta1']
     eta2 = config['eta2']
     epsilon = config['epsilon']
-    be = config['be']
     tau = config['tau']
     mass = config['mass']
     best_step = 0
     best_acc = 0.0
+    iter_source = iter(dset_loaders["source"])
+    iter_target = iter(dset_loaders["target"])
+    batch_size = train_bs
+    large_batch_size = batch_size * k
+    latent_size = base_network.output_num()
+    n_channels = 3
+    if prep_config["test_10crop"]:
+        img_size = 224
+    else:
+        img_size = 256
 
-    for id_iter in tqdm(range(config["num_iterations"]), total=config["num_iterations"]):
-        if id_iter % config["test_interval"] == config["test_interval"]-1:
+    for i in tqdm(range(config["num_iterations"]), total=config["num_iterations"]):
+        if i % config["test_interval"] == config["test_interval"]-1:
             base_network.eval()
             temp_acc = image_classification_test(dset_loaders, \
                 base_network, test_10crop=prep_config["test_10crop"])
             temp_model = base_network #nn.Sequential(base_network)
             if temp_acc > best_acc:
-                best_step = id_iter
+                best_step = i
                 best_acc = temp_acc
                 best_model = temp_model
                 checkpoint = {"base_network": best_model.state_dict()}
                 torch.save(checkpoint, osp.join(config["output_path"], "best_model.pth"))
                 print("\n##########     save the best model.    #############\n")
-            log_str = "iter: {:05d}, precision: {:.5f}".format(id_iter, temp_acc)
+            log_str = "iter: {:05d}, s_loss: {:.5f}, da_loss: {:.5f}, precision: {:.5f}".format(i, total_s_loss, total_da_loss, temp_acc)
             config["out_file"].write(log_str+"\n")
             config["out_file"].flush()
             print(log_str)
 
-        if id_iter >= config["stop_step"]:
+        if i >= config["stop_step"]:
             log_str = "method {}, iter: {:05d}, precision: {:.5f}".format(config["output_path"], best_step, best_acc)
             config["final_log"].write(log_str+"\n")
             config["final_log"].flush()
             break
-
+                 
         ## train one iter
         base_network.train()
-        xs_mb_all, ys_mb_all, xt_mb_all = [], [], []
-
-        for _ in range(k):
-            try:
-                xs_mb, ys_mb = next(iter_source)
-                xt_mb, _ = next(iter_target)
-            except:
-                iter_source = iter(dset_loaders["source"])
-                iter_target = iter(dset_loaders["target"])
-                xs_mb, ys_mb = next(iter_source)
-                xt_mb, _ = next(iter_target)
-            xs_mb_all.append(xs_mb)
-            ys_mb_all.append(ys_mb)
-            xt_mb_all.append(xt_mb)
-        list_transfer_loss = []
+        all_xs = torch.rand(large_batch_size, n_channels, img_size, img_size)
+        all_ys = torch.zeros(large_batch_size, dtype=torch.long)
+        all_xt = torch.rand(large_batch_size, 3, img_size, img_size)
+        all_g_xs = torch.rand(large_batch_size, latent_size)
+        all_g_xt = torch.rand(large_batch_size, latent_size)
+        all_f_g_xt = torch.rand(large_batch_size, class_num)
         
-        if use_bomb:
-            # Forward
-            with torch.no_grad():
-                for i in range(k):
-                    xs_mb = xs_mb_all[i].cuda()
-                    ys_mb = ys_mb_all[i].cuda()
-                    g_xs_mb, f_g_xs_mb = base_network(xs_mb)
+        # STEP 1. Forward without grad in GPU
+        with torch.no_grad():
+            for idx in range(k):
+                try:
+                    xs_mb, ys_mb = next(iter_source)
+                    xt_mb, _ = next(iter_target)
+                except:
+                    iter_source = iter(dset_loaders["source"])
+                    iter_target = iter(dset_loaders["target"])
+                    xs_mb, ys_mb = next(iter_source)
+                    xt_mb, _ = next(iter_target)
 
-                    for j in range(k):
-                        xt_mb = xt_mb_all[j].cuda()
-                        g_xt_mb, f_g_xt_mb = base_network(xt_mb)
-                        pred_xt = F.softmax(f_g_xt_mb, 1)
-                        ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
-                        M_embed = torch.cdist(g_xs_mb, g_xt_mb)**2
-                        M_sce = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
-                        M = eta1 * M_embed + eta2 * M_sce
-                        a, b = ot.unif(g_xs_mb.size(0)), ot.unif(g_xt_mb.size(0))
-                        M_cpu = M.detach().cpu().numpy()
-                        if ot_type == 'balanced':
-                            if epsilon == 0:
-                                pi = ot.emd(a, b, M_cpu)
-                            else:
-                                pi = ot.sinkhorn(a, b, M_cpu, epsilon)
-                        elif ot_type == 'unbalanced':
-                            pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, M_cpu, epsilon, tau)
-                        elif ot_type == 'partial':
-                            if epsilon == 0:
-                                pi = ot.partial.partial_wasserstein(a, b, M_cpu, mass)
-                            else:
-                                pi = ot.partial.entropic_partial_wasserstein(a, b, M_cpu, m=mass, reg=epsilon)
-                        pi = torch.from_numpy(pi).float().cuda()
-                        transfer_loss = torch.sum(pi * M)
-                        list_transfer_loss.append(transfer_loss)
-                # Solving kxk OT
-                big_C = torch.stack(list_transfer_loss).view(k, k)
-                if be == 0:
-                    plan = ot.emd([], [], big_C.detach().cpu().numpy())
-                else:
-                    plan = ot.sinkhorn([], [], big_C.detach().cpu().numpy(), reg=be)
-        
-            # Reforward
-            optimizer = lr_scheduler(optimizer, id_iter, **schedule_param)
-            optimizer.zero_grad()
-            
-            for i in range(k):
-                for j in range(k):
-                    total_loss = 0
-                    xs_mb = xs_mb_all[i].cuda()
-                    ys_mb = ys_mb_all[i].cuda()
-                    g_xs_mb, f_g_xs_mb = base_network(xs_mb)
-                    # Classifier loss
-                    classifier_loss = 1./(k**2) * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
-                    total_loss += classifier_loss
-                    if plan[i, j] == 0:
-                        total_loss.backward()
-                        continue
-                    xt_mb = xt_mb_all[j].cuda()
-                    g_xt_mb, f_g_xt_mb = base_network(xt_mb)
-                    pred_xt = F.softmax(f_g_xt_mb, 1)
-                    ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
-                    M_embed = torch.cdist(g_xs_mb, g_xt_mb)**2
-                    M_sce = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
-                    M = eta1 * M_embed + eta2 * M_sce
-                    a, b = ot.unif(g_xs_mb.size(0)), ot.unif(g_xt_mb.size(0))
-                    M_cpu = M.detach().cpu().numpy()
-                    if ot_type == 'balanced':
-                        if epsilon == 0:
-                            pi = ot.emd(a, b, M_cpu)
-                        else:
-                            pi = ot.sinkhorn(a, b, M_cpu, epsilon)
-                    elif ot_type == 'unbalanced':
-                        pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, M_cpu, epsilon, tau)
-                    elif ot_type == 'partial':
-                        if epsilon == 0:
-                            pi = ot.partial.partial_wasserstein(a, b, M_cpu, mass)
-                        else:
-                            pi = ot.partial.entropic_partial_wasserstein(a, b, M_cpu, m=mass, reg=epsilon)
-                    pi = torch.from_numpy(pi).float().cuda()
-                    transfer_loss = torch.sum(pi * M)
-                    transfer_loss = plan[i, j] * transfer_loss
-                    total_loss += transfer_loss
-                    total_loss.backward()
-                    
-            optimizer.step()
-        else:
-            optimizer = lr_scheduler(optimizer, id_iter, **schedule_param)
-            optimizer.zero_grad()
-
-            for i in range(k):
-                total_loss = 0
-                xs_mb = xs_mb_all[i].cuda()
-                ys_mb = ys_mb_all[i].cuda()
+                xs_mb, xt_mb, ys_mb = xs_mb.cuda(), xt_mb.cuda(), ys_mb.cuda()
                 g_xs_mb, f_g_xs_mb = base_network(xs_mb)
-                # Classifier loss
-                classifier_loss = 1./k * nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb)
-                total_loss += classifier_loss
-                xt_mb = xt_mb_all[i].cuda()
                 g_xt_mb, f_g_xt_mb = base_network(xt_mb)
-                pred_xt = F.softmax(f_g_xt_mb, 1)
-                ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
-                M_embed = torch.cdist(g_xs_mb, g_xt_mb)**2
-                M_sce = - torch.mm(ys_oh, torch.transpose(torch.log(pred_xt), 0, 1))
-                M = eta1 * M_embed + eta2 * M_sce
-                a, b = ot.unif(g_xs_mb.size(0)), ot.unif(g_xt_mb.size(0))
-                M_cpu = M.detach().cpu().numpy()
-                if ot_type == 'balanced':
-                    if epsilon == 0:
-                        pi = ot.emd(a, b, M_cpu)
-                    else:
-                         pi = ot.sinkhorn(a, b, M_cpu, epsilon)
-                elif ot_type == 'unbalanced':
-                    pi = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, M_cpu, epsilon, tau)
-                elif ot_type == 'partial':
-                    if epsilon == 0:
-                        pi = ot.partial.partial_wasserstein(a, b, M_cpu, mass)
-                    else:
-                        pi = ot.partial.entropic_partial_wasserstein(a, b, M_cpu, m=mass, reg=epsilon)
-                pi = torch.from_numpy(pi).float().cuda()
-                transfer_loss = torch.sum(pi * M)
-                transfer_loss = 1./k * transfer_loss
-                total_loss += transfer_loss
-                total_loss.backward()
+                all_xs[idx*batch_size:(idx + 1) * batch_size, :] = xs_mb.detach().cpu()
+                all_ys[idx*batch_size:(idx + 1) * batch_size] = ys_mb.detach().cpu()
+                all_xt[idx*batch_size:(idx + 1) * batch_size, :] = xt_mb.detach().cpu()
+                all_g_xs[idx*batch_size:(idx + 1) * batch_size, :] = g_xs_mb.detach().cpu()
+                all_g_xt[idx*batch_size:(idx + 1) * batch_size, :] = g_xt_mb.detach().cpu()
+                all_f_g_xt[idx*batch_size:(idx + 1) * batch_size, :] = f_g_xt_mb.detach().cpu()
+        
+        # STEP 2. Calculate OT map in CPU
+        with torch.no_grad():
+            embed_cost = torch.cdist(all_g_xs, all_g_xt) ** 2
+            all_ys_oh = F.one_hot(all_ys, num_classes=class_num).float()
+            all_pred_xt = torch.log(F.softmax(all_f_g_xt, 1))
+            t_cost = - torch.mm(all_ys_oh, torch.transpose(all_pred_xt, 0, 1))
+            total_cost = eta1 * embed_cost + eta2 * t_cost
+            a, b = ot.unif(total_cost.size(0)), ot.unif(total_cost.size(1))
+            if ot_type == 'ot':
+                if epsilon == 0:
+                    plan = ot.emd(a, b, total_cost.detach().cpu().numpy())
+                else:
+                    plan = ot.sinkhorn(a, b, total_cost.detach().cpu().numpy(), reg=epsilon)
+            elif ot_type == 'uot':
+                plan = ot.unbalanced.sinkhorn_knopp_unbalanced(a, b, total_cost.detach().cpu().numpy(), epsilon, tau)
+            elif ot_type == 'pot':
+                nb_dummies = int(np.ceil(large_batch_size / 100))
+                if epsilon == 0:
+                    plan = ot.partial.partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), m=mass, nb_dummies=nb_dummies)
+                else:
+                    plan = ot.partial.entropic_partial_wasserstein(a, b, total_cost.detach().cpu().numpy(), m=mass, reg=epsilon)
+            mapping = np.argmax(plan, axis=1)
             
-            optimizer.step()
-
-    checkpoint = {"base_network": temp_model.state_dict()}
+            # if using ot or pot loss, replace the transportation plan
+            # by a coefficient vector for efficient implementation
+            # calculate coefficient, 1/k -> 1 and 0 -> 0
+            if (ot_type != 'uot') and (epsilon == 0):
+                coef = torch.zeros(large_batch_size)
+                for idx in range(large_batch_size):
+                    if np.abs(plan[idx, mapping[idx]] - 1/large_batch_size) <= 1e-6:
+                        coef[idx] = 1.
+                coef = coef.unsqueeze(1)
+        
+        # STEP 3. Reforward with grad in GPU
+        optimizer = lr_scheduler(optimizer, i, **schedule_param)
+        optimizer.zero_grad()
+        total_s_loss = 0
+        total_da_loss = 0
+        
+        for idx in range(0, large_batch_size, batch_size):
+            row_inds = np.s_[idx:idx+batch_size]
+            col_inds = mapping[row_inds]
+            xs_mb = all_xs[row_inds, :]
+            ys_mb = all_ys[row_inds]
+            xt_mb = all_xt[col_inds, :]
+            xs_mb, xt_mb, ys_mb = xs_mb.cuda(), xt_mb.cuda(), ys_mb.cuda()
+            g_xs_mb, f_g_xs_mb = base_network(xs_mb)
+            g_xt_mb, f_g_xt_mb = base_network(xt_mb)
+            pred_xt = torch.log(F.softmax(f_g_xt_mb, 1))
+            ys_oh = F.one_hot(ys_mb, num_classes=class_num).float()
+            if (ot_type != 'uot') and (epsilon == 0):
+                coef_m = coef[row_inds].cuda() 
+                embed_loss = torch.sum((g_xs_mb - g_xt_mb)**2 * coef_m, 1)
+                t_loss = - torch.sum(ys_oh * pred_xt * coef_m, 1)
+                da_loss = eta1 * embed_loss + eta2 * t_loss
+                da_loss = torch.mean(da_loss) / k
+            else:
+                coef_m = torch.from_numpy(plan[row_inds, col_inds]).cuda()
+                embed_loss = torch.cdist(g_xs_mb, g_xt_mb) ** 2
+                t_loss = - torch.mm(ys_oh, torch.transpose(pred_xt, 0, 1))
+                da_loss = eta1 * embed_loss + eta2 * t_loss
+                da_loss = torch.sum(coef_m * da_loss)
+            s_loss = nn.CrossEntropyLoss()(f_g_xs_mb, ys_mb) / k
+            total_loss = s_loss + da_loss
+            total_loss.backward()
+            total_s_loss += s_loss
+            total_da_loss += da_loss
+        
+        optimizer.step()
+    checkpoint = {"base_network": base_network.state_dict()}
     torch.save(checkpoint, osp.join(config["output_path"], "final_model.pth"))
     return best_acc
 
@@ -352,6 +317,7 @@ if __name__ == "__main__":
     parser.add_argument('--stratify_source', action='store_true', help="whether to use a stratified sampling on minibatches")
     parser.add_argument('--t_dset_path', type=str, default='./data/office/webcam_10_list.txt', help="The target dataset path list")
     parser.add_argument('--test_interval', type=int, default=500, help="interval of two continuous test phase")
+    parser.add_argument('--snapshot_interval', type=int, default=5000, help="interval of two continuous output model")
     parser.add_argument('--output_dir', type=str, default='san', help="output directory of our model (in ../snapshot directory)")
     parser.add_argument('--restore_dir', type=str, default=None, help="restore directory of our model (in ../snapshot directory)")
     parser.add_argument('--lr', type=float, default=0.001, help="learning rate")
@@ -363,14 +329,12 @@ if __name__ == "__main__":
     parser.add_argument('--num_worker', type=int, default=4)
     parser.add_argument('--test_10crop', type=str2bool, default=True)
     # --- OT parameters ---
-    parser.add_argument('--ot_type', type=str, default='balanced', choices=['balanced', 'unbalanced', 'partial'], help='Type of optimal transport')
+    parser.add_argument('--ot_type', type=str, default='ot', choices=['ot', 'uot', 'pot'], help='Type of optimal transport')
     parser.add_argument('--eta1', type=float, default=0.1, help="weight of embedding loss")
     parser.add_argument('--eta2', type=float, default=0.1, help="weight of transportation loss")
     parser.add_argument('--epsilon', type=float, default=0., help="OT regularization coefficient")
     parser.add_argument('--tau', type=float, default=1., help="marginal penalization coeffidient")
     parser.add_argument('--mass', type=float, default=0.5, help="ratio of masses to be transported")
-    parser.add_argument('--use_bomb', action='store_true', help='whether to use BomB version')
-    parser.add_argument('--be', type=float, default=0., help="OT regularization coefficient between mini-batches")
     parser.add_argument('--k', type=int, default=1, help='number of minibatches')
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
@@ -389,14 +353,13 @@ if __name__ == "__main__":
     config["gpu"] = args.gpu_id
     config["num_iterations"] = args.stop_step + 1
     config["test_interval"] = args.test_interval
+    config["snapshot_interval"] = args.snapshot_interval
     config["ot_type"] = args.ot_type
     config["eta1"] = args.eta1
     config["eta2"] = args.eta2
     config["epsilon"] = args.epsilon
     config["tau"] = args.tau
     config["mass"] = args.mass
-    config["use_bomb"] = args.use_bomb
-    config["be"] = args.be
     config["k"] = args.k
     config["output_for_test"] = True
     config["output_path"] = "snapshot/" + args.output_dir
@@ -455,7 +418,7 @@ if __name__ == "__main__":
     config["data"] = {"source":{"list_path":args.s_dset_path, "batch_size":args.batch_size}, \
                       "target":{"list_path":args.t_dset_path, "batch_size":args.batch_size}, \
                       "test":{"list_path":args.t_dset_path, "batch_size":test_bs}}
-
+                      
     if args.lr != 0.001:
         config["optimizer"]["lr_param"]["lr"] = args.lr
         config["optimizer"]["lr_param"]["gamma"] = 0.001

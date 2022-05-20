@@ -111,8 +111,6 @@ do
     esac
 
     # OT parameters
-    ITER=10000
-    TEST_INTERVAL=500
     BATCH=72
     EPSILON=0.2
 
@@ -128,7 +126,6 @@ do
                         --gpu_id ${gpus} \
                         --net ResNet50 \
                         --dset visda \
-                        --test_interval $TEST_INTERVAL \
                         --s_dset_path ${s_dset_path} \
                         --t_dset_path ${t_dset_path} \
                         --batch_size $BATCH \
@@ -136,7 +133,6 @@ do
                         --final_log "${final_log}_log.txt" \
                         --loss_type ${loss_type} \
                         --threshold ${threshold} \
-                        --stop_step $ITER \
                         --restore_dir ${output_dir}
         echo "Finish in ${output_dir}"
     done

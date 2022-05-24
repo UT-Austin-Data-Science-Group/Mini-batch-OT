@@ -1,18 +1,20 @@
-import os
 import argparse
+import os
 import random
 import shutil
-from tqdm import tqdm
+
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import network
 import numpy as np
+import pre_process as prep
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import network
-import pre_process as prep
 from data_list import ImageList
+from sklearn.manifold import TSNE
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
 
 TICK_SIZE = 14
 TITLE_SIZE = 20
@@ -26,7 +28,7 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
     random.seed(seed)
-    if (torch.cuda.is_available()):
+    if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
 
 
@@ -53,8 +55,7 @@ def extract_feature(loader, model, test_10crop=True):
                 all_label = labels.float()
                 start_test = False
             else:
-                all_output = torch.cat(
-                    (all_output, outputs.float().cpu()), 0)
+                all_output = torch.cat((all_output, outputs.float().cpu()), 0)
                 all_label = torch.cat((all_label, labels.float()), 0)
     else:
         iter_test = iter(loader)
@@ -71,8 +72,7 @@ def extract_feature(loader, model, test_10crop=True):
                 all_label = labels
                 start_test = False
             else:
-                all_output = torch.cat(
-                    (all_output, outputs.float().cpu()), 0)
+                all_output = torch.cat((all_output, outputs.float().cpu()), 0)
                 all_label = torch.cat((all_label, labels), 0)
     return all_output, all_label
 
@@ -81,16 +81,16 @@ def plot_embeddings(config, ax, title):
     # set pre-process
     transforms = None
     if config["prep"]["test_10crop"]:
-        transforms = prep.image_test_10crop(**config["prep"]['params'])
+        transforms = prep.image_test_10crop(**config["prep"]["params"])
     else:
-        transforms = prep.image_test(**config["prep"]['params'])
+        transforms = prep.image_test(**config["prep"]["params"])
 
     # prepare data
     dsets = {}
     dset_loaders = {}
     data_config = config["data"]
 
-    for split in ['source', 'target']:
+    for split in ["source", "target"]:
         bs = data_config[split]["batch_size"]
 
         t = open(data_config[split]["list_path"]).readlines()
@@ -101,34 +101,24 @@ def plot_embeddings(config, ax, title):
             d[tt[-1]].append(tt[0])
 
         for k in d:
-            n = int(len(d[k]) * config['ratio'])
+            n = int(len(d[k]) * config["ratio"])
             d[k] = np.random.choice(d[k], size=n, replace=False)
             # d[k] = d[k][:n]
 
         ds_list = []
         for k, v in d.items():
             for vv in v:
-                ds_list.append(f'./{vv} {k}')
+                ds_list.append(f"./{vv} {k}")
 
         if config["prep"]["test_10crop"]:
             for _ in range(10):
-                dsets[split] = [
-                    ImageList(ds_list, transform=transforms[i])
-                    for i in range(10)
-                ]
+                dsets[split] = [ImageList(ds_list, transform=transforms[i]) for i in range(10)]
                 dset_loaders[split] = [
-                    DataLoader(dset,
-                               batch_size=bs,
-                               shuffle=False,
-                               num_workers=4)
-                    for dset in dsets[split]
+                    DataLoader(dset, batch_size=bs, shuffle=False, num_workers=4) for dset in dsets[split]
                 ]
         else:
             dsets[split] = ImageList(ds_list, transform=transforms)
-            dset_loaders[split] = DataLoader(dsets[split],
-                                             batch_size=bs,
-                                             shuffle=False,
-                                             num_workers=4)
+            dset_loaders[split] = DataLoader(dsets[split], batch_size=bs, shuffle=False, num_workers=4)
 
     # set base network
     net_config = config["network"]
@@ -147,110 +137,103 @@ def plot_embeddings(config, ax, title):
 
     base_network.fc = nn.Identity()
 
-    gpus = config['gpu'].split(',')
+    gpus = config["gpu"].split(",")
     if len(gpus) > 1:
-        base_network = nn.DataParallel(base_network, device_ids=[
-                                       int(i) for i in range(len(gpus))])
+        base_network = nn.DataParallel(base_network, device_ids=[int(i) for i in range(len(gpus))])
 
     embeddings = {}
     labels = {}
-    for split in ['source', 'target']:
-        embeddings[split], labels[split] = extract_feature(dset_loaders[split],
-                                                           base_network,
-                                                           test_10crop=config["prep"]["test_10crop"])
+    for split in ["source", "target"]:
+        embeddings[split], labels[split] = extract_feature(
+            dset_loaders[split], base_network, test_10crop=config["prep"]["test_10crop"]
+        )
 
-    tsne = TSNE(perplexity=30, n_components=2, init='pca',
-                n_iter=3000, random_state=config['seed'])
+    tsne = TSNE(perplexity=30, n_components=2, init="pca", n_iter=3000, random_state=config["seed"])
 
-    ds_labels = torch.cat([
-        torch.zeros(len(labels['source'])),
-        torch.ones(len(labels['target']))
-    ])
-    embeddings = torch.cat([
-        embeddings['source'],
-        embeddings['target']
-    ])
+    ds_labels = torch.cat([torch.zeros(len(labels["source"])), torch.ones(len(labels["target"]))])
+    embeddings = torch.cat([embeddings["source"], embeddings["target"]])
     emb_tsne = tsne.fit_transform(embeddings)
 
-    ax.scatter(emb_tsne[ds_labels == 0, 0], emb_tsne[ds_labels == 0, 1], c=labels['source'],
-               s=MARKER_SIZE, alpha=0.5, marker='o', cmap=cm.nipy_spectral, label='Source')
-    ax.scatter(emb_tsne[ds_labels == 1, 0], emb_tsne[ds_labels == 1, 1], c=labels['target'],
-               s=MARKER_SIZE*5, alpha=0.5, marker='+', cmap=cm.nipy_spectral, label='Target')
+    ax.scatter(
+        emb_tsne[ds_labels == 0, 0],
+        emb_tsne[ds_labels == 0, 1],
+        c=labels["source"],
+        s=MARKER_SIZE,
+        alpha=0.5,
+        marker="o",
+        cmap=cm.nipy_spectral,
+        label="Source",
+    )
+    ax.scatter(
+        emb_tsne[ds_labels == 1, 0],
+        emb_tsne[ds_labels == 1, 1],
+        c=labels["target"],
+        s=MARKER_SIZE * 5,
+        alpha=0.5,
+        marker="+",
+        cmap=cm.nipy_spectral,
+        label="Target",
+    )
 
-    ax.tick_params(axis='both', which='major', labelsize=TICK_SIZE)
+    ax.tick_params(axis="both", which="major", labelsize=TICK_SIZE)
     ax.set_title(title, fontsize=TITLE_SIZE)
-    ax.legend(loc='upper right')
+    ax.legend(loc="upper right")
     ax.set_xlim(-125, 125)
     ax.set_ylim(-125, 125)
 
 
 def parse_args():
     def str2bool(v):
-        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        if v.lower() in ("yes", "true", "t", "y", "1"):
             return True
-        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        elif v.lower() in ("no", "false", "f", "n", "0"):
             return False
         else:
-            raise argparse.ArgumentTypeError('Unsupported value encountered.')
+            raise argparse.ArgumentTypeError("Unsupported value encountered.")
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--gpu_id", type=str, nargs="?", default="0", help="device id to run")
     parser.add_argument(
-        '--gpu_id', type=str, nargs='?', default='0',
-        help="device id to run"
+        "--net",
+        type=str,
+        default="ResNet50",
+        choices=[
+            "ResNet18",
+            "ResNet34",
+            "ResNet50",
+            "ResNet101",
+            "ResNet152",
+            "VGG11",
+            "VGG13",
+            "VGG16",
+            "VGG19",
+            "VGG11BN",
+            "VGG13BN",
+            "VGG16BN",
+            "VGG19BN",
+            "AlexNet",
+        ],
     )
     parser.add_argument(
-        '--net', type=str, default='ResNet50',
-        choices=["ResNet18", "ResNet34", "ResNet50", "ResNet101",
-                 "ResNet152", "VGG11", "VGG13", "VGG16", "VGG19",
-                 "VGG11BN", "VGG13BN", "VGG16BN", "VGG19BN", "AlexNet"]
+        "--dset",
+        type=str,
+        default="office",
+        choices=["office", "visda", "office-home"],
+        help="The dataset or source dataset used",
     )
     parser.add_argument(
-        '--dset', type=str, default='office',
-        choices=['office', 'visda', 'office-home'],
-        help="The dataset or source dataset used"
+        "--s_dset_path", type=str, default="./data/office/amazon_31_list.txt", help="The source dataset path list"
     )
     parser.add_argument(
-        '--s_dset_path', type=str,
-        default='./data/office/amazon_31_list.txt',
-        help="The source dataset path list"
+        "--t_dset_path", type=str, default="./data/office/webcam_10_list.txt", help="The target dataset path list"
     )
-    parser.add_argument(
-        '--t_dset_path', type=str,
-        default='./data/office/webcam_10_list.txt',
-        help="The target dataset path list"
-    )
-    parser.add_argument(
-        '--output_dir', type=str,
-        help="output directory of our model (in ../snapshot directory)"
-    )
-    parser.add_argument(
-        '--restore_dir', nargs=3,
-        help="restore directory of our model (in ../snapshot directory)"
-    )
-    parser.add_argument(
-        '--titles', nargs=3,
-        help="subplot titles"
-    )
-    parser.add_argument(
-        '--batch_size', type=int,
-        default=100,
-        help="batch_size"
-    )
-    parser.add_argument(
-        '--cos_dist', type=str2bool,
-        default=False,
-        help="cos_dist"
-    )
-    parser.add_argument(
-        '--ratio', type=float,
-        default=0.01,
-        help='ratio of instances per class'
-    )
-    parser.add_argument(
-        '--seed', type=int,
-        default=2020,
-        help="random seed"
-    )
+    parser.add_argument("--output_dir", type=str, help="output directory of our model (in ../snapshot directory)")
+    parser.add_argument("--restore_dir", nargs=3, help="restore directory of our model (in ../snapshot directory)")
+    parser.add_argument("--titles", nargs=3, help="subplot titles")
+    parser.add_argument("--batch_size", type=int, default=100, help="batch_size")
+    parser.add_argument("--cos_dist", type=str2bool, default=False, help="cos_dist")
+    parser.add_argument("--ratio", type=float, default=0.01, help="ratio of instances per class")
+    parser.add_argument("--seed", type=int, default=2020, help="random seed")
     return parser.parse_args()
 
 
@@ -261,7 +244,7 @@ if __name__ == "__main__":
 
     # train config
     config = {}
-    config['seed'] = args.seed
+    config["seed"] = args.seed
     config["gpu"] = args.gpu_id
 
     config["output_path"] = "snapshot/" + args.output_dir
@@ -273,11 +256,11 @@ if __name__ == "__main__":
 
     config["prep"] = {
         "test_10crop": False,
-        'params': {
+        "params": {
             "resize_size": 256,
             "crop_size": 224,
-            'alexnet': False,
-        }
+            "alexnet": False,
+        },
     }
 
     if "ResNet" in args.net:
@@ -289,32 +272,21 @@ if __name__ == "__main__":
                 "use_bottleneck": True,
                 "bottleneck_dim": 512,
                 "new_cls": True,
-                "cos_dist": args.cos_dist
-            }
+                "cos_dist": args.cos_dist,
+            },
         }
     elif "VGG" in args.net:
         config["network"] = {
             "name": network.VGGFc,
-            "params": {
-                "vgg_name": args.net,
-                "use_bottleneck": True,
-                "bottleneck_dim": 256,
-                "new_cls": True
-            }
+            "params": {"vgg_name": args.net, "use_bottleneck": True, "bottleneck_dim": 256, "new_cls": True},
         }
 
     config["dataset"] = args.dset
     config["data"] = {
-        "source": {
-            "list_path": args.s_dset_path,
-            "batch_size": args.batch_size
-        },
-        "target": {
-            "list_path": args.t_dset_path,
-            "batch_size": args.batch_size
-        },
+        "source": {"list_path": args.s_dset_path, "batch_size": args.batch_size},
+        "target": {"list_path": args.t_dset_path, "batch_size": args.batch_size},
     }
-    config['ratio'] = args.ratio
+    config["ratio"] = args.ratio
 
     if config["dataset"] == "office":
         config["network"]["params"]["class_num"] = 31
@@ -323,12 +295,12 @@ if __name__ == "__main__":
     elif config["dataset"] == "visda":
         config["network"]["params"]["class_num"] = 12
     else:
-        raise ValueError('Dataset has not been implemented.')
+        raise ValueError("Dataset has not been implemented.")
 
     fig, ax = plt.subplots(1, 3, figsize=(20, 5))
     for i in range(3):
-        seed_everything(config['seed'])
+        seed_everything(config["seed"])
         config["restore_path"] = "snapshot/" + args.restore_dir[i]
         plot_embeddings(config, ax[i], args.titles[i])
-    plt.savefig(config['output_path'] + '/plot.png', bbox_inches='tight')
-    plt.savefig(config['output_path'] + '/plot.pdf', bbox_inches='tight')
+    plt.savefig(config["output_path"] + "/plot.png", bbox_inches="tight")
+    plt.savefig(config["output_path"] + "/plot.pdf", bbox_inches="tight")

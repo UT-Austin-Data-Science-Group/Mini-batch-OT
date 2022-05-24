@@ -1,18 +1,14 @@
 import os
-import csv
+
+import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data
-from torch.utils.data import Dataset
-import random
-import numpy as np
-from PIL import Image
-from torch.utils.data.sampler import BatchSampler
 from tqdm import tqdm
 
 
-#-------- Eval function --------
+# -------- Eval function --------
+
 
 def model_eval(dataloader, model_g, model_f):
     """
@@ -37,7 +33,9 @@ def model_eval(dataloader, model_g, model_f):
         accuracy = correct_prediction.cpu().data.numpy() / total_samples
     return accuracy
 
-#--------SAMPLER-------
+
+# --------SAMPLER-------
+
 
 class BalancedBatchSampler(torch.utils.data.sampler.BatchSampler):
     """
@@ -54,22 +52,17 @@ class BalancedBatchSampler(torch.utils.data.sampler.BatchSampler):
         self._n_samples = batch_size // n_classes
         self._n_remain = batch_size % n_classes
         if self._n_samples == 0:
-            raise ValueError(
-                f"batch_size should be bigger than the number of classes, got {batch_size}"
-            )
+            raise ValueError(f"batch_size should be bigger than the number of classes, got {batch_size}")
 
         self._class_iters = [
-            InfiniteSliceIterator(np.where(labels == class_)[0], class_=class_)
-            for class_ in self.classes
+            InfiniteSliceIterator(np.where(labels == class_)[0], class_=class_) for class_ in self.classes
         ]
 
         # batch_size = self._n_samples * n_classes
         self.n_dataset = len(labels)
         self._n_batches = int(np.round(self.n_dataset // batch_size))
         if self._n_batches == 0:
-            raise ValueError(
-                f"Dataset is not big enough to generate batches with size {batch_size}"
-            )
+            raise ValueError(f"Dataset is not big enough to generate batches with size {batch_size}")
         print("K=", n_classes, "nk=", self._n_samples)
         print("Batch size = ", batch_size)
 
@@ -83,7 +76,7 @@ class BalancedBatchSampler(torch.utils.data.sampler.BatchSampler):
                 else:
                     add_samples = 0
                 indices.extend(class_iter.get(self._n_samples + add_samples))
-                
+
             np.random.shuffle(indices)
             yield indices
 
@@ -92,8 +85,8 @@ class BalancedBatchSampler(torch.utils.data.sampler.BatchSampler):
 
     def __len__(self):
         return self._n_batches
-    
-    
+
+
 class InfiniteSliceIterator:
     def __init__(self, array, class_):
         assert type(array) is np.ndarray
@@ -125,14 +118,16 @@ class InfiniteSliceIterator:
         self.i += n
         return self.array[i : self.i]
 
-#--------Others-------
+
+# --------Others-------
+
 
 def save_acc(file_path, epoch, acc):
     if os.path.exists(file_path):
         header = False
     else:
         header = True
-    with open(file_path, mode='a') as f:
+    with open(file_path, mode="a") as f:
         if header:
             f.write(f"epoch,acc\n{epoch},{acc}\n")
         else:

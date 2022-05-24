@@ -7,3 +7,4 @@ geomloss==0.2.5
 pot==0.8.2
 matplotlib==3.5.0
 cvxpy==1.2.1
+pyabc==0.12.4

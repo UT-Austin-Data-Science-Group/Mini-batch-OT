@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
 
+
 def make_dataset(image_list, labels):
     if labels:
         len_ = len(image_list)
@@ -15,27 +16,29 @@ def make_dataset(image_list, labels):
 
 
 def rgb_loader(path):
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         with Image.open(f) as img:
-            return img.convert('RGB')
+            return img.convert("RGB")
+
 
 def l_loader(path):
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         with Image.open(f) as img:
-            return img.convert('L')
+            return img.convert("L")
+
 
 class ImageList(Dataset):
-    def __init__(self, image_list, labels=None, transform=None, target_transform=None, mode='RGB'):
+    def __init__(self, image_list, labels=None, transform=None, target_transform=None, mode="RGB"):
         imgs = make_dataset(image_list, labels)
         if len(imgs) == 0:
-            raise(RuntimeError("Found 0 images"))
+            raise (RuntimeError("Found 0 images"))
 
         self.imgs = imgs
         self.transform = transform
         self.target_transform = target_transform
-        if mode == 'RGB':
+        if mode == "RGB":
             self.loader = rgb_loader
-        elif mode == 'L':
+        elif mode == "L":
             self.loader = l_loader
 
     def __getitem__(self, index):
@@ -51,6 +54,7 @@ class ImageList(Dataset):
     def __len__(self):
         return len(self.imgs)
 
+
 class ImageList_label(ImageList):
     def __getitem__(self, index):
         path, target = self.imgs[index]
@@ -62,12 +66,12 @@ class ImageList_label(ImageList):
 
         return img, target, path
 
+
 class ImageValueList(Dataset):
-    def __init__(self, image_list, labels=None, transform=None, target_transform=None,
-                 loader=rgb_loader):
+    def __init__(self, image_list, labels=None, transform=None, target_transform=None, loader=rgb_loader):
         imgs = make_dataset(image_list, labels)
         if len(imgs) == 0:
-            raise(RuntimeError("Found 0 images"))
+            raise (RuntimeError("Found 0 images"))
 
         self.imgs = imgs
         self.values = [1.0] * len(imgs)

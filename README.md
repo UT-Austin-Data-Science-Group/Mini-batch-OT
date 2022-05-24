@@ -1,7 +1,11 @@
 # BoMb-OT
+![Python 3.9](https://img.shields.io/badge/python-3.9-green)
+![Pytorch 1.10.1](https://img.shields.io/badge/pytorch-1.10.1-green)
+![License MIT](https://img.shields.io/badge/license-MIT-blue)
+
 Official Python3 implementations of ICML papers [On Transportation of Mini-batches: A Hierarchical Approach](https://arxiv.org/abs/2102.05912) and [Improving Mini-batch Optimal Transport via Partial Transportation](https://arxiv.org/abs/2108.09645).
 
-Please CITE our papers whenever this repository is used to help produce published results or incorporated into other software.
+Details of the model architecture and experimental results can be found in our following papers:
 ```
 @InProceedings{nguyen2021transportation,
     title={On Transportation of Mini-batches: A Hierarchical Approach}, 
@@ -18,10 +22,12 @@ Please CITE our papers whenever this repository is used to help produce publishe
     year={2022},
 }
 ```
+Please CITE our papers whenever this repository is used to help produce published results or incorporated into other software.
+
 This implementation is made by Khai Nguyen and Dang Nguyen. README is on updating process.
 
 ## Requirements
-The code is implemented with Python (3.9.7) and Pytorch (1.10.1).
+The code is implemented with Python (3.9) and Pytorch (1.10.1).
 
 To install the required python packages, run
 ```

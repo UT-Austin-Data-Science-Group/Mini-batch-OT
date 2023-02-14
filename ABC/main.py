@@ -1,14 +1,17 @@
 import argparse
 import os
+import tempfile
 import pickle
 import random
 import time
+from datetime import timedelta
 
 import matplotlib.pyplot as plt
 import numpy as np
 import ot
 import pandas as pd
 import pyabc
+from pyabc.sge import nr_cores_available
 import utils
 from scipy.stats import invgamma
 
@@ -187,8 +190,11 @@ def main(param, dim, n_obs, n_procs, n_it, n_particles, max_time, types, labels,
             eps=pyabc.epsilon.QuantileEpsilon(alpha=0.5),
         )
 
+        db_path = ("sqlite:///" +
+                   os.path.join(tempfile.gettempdir(), "test.db"))
+        abc_id = abc.new(db_path, {"data": observations})
         # Run ABC-SMC
-        history = abc.run(minimum_epsilon=0.01, max_nr_populations=n_it, max_time=max_time * 60.0)
+        history = abc.run(minimum_epsilon=0.01, max_nr_populations=n_it, max_walltime=timedelta(seconds=max_time * 60.0))
         end = time.time()
         times.append(end - start)
         # Save results
@@ -204,7 +210,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n_procs",
         type=int,
-        default=pyabc.sge.nr_cores_available(),
+        default=nr_cores_available(),
         help="number of processors to use for parallelization",
     )
     parser.add_argument("--n_it", type=int, default=10, help="number of ABC iterations")
